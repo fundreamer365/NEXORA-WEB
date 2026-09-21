@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>NEXORA — Connect without limits</title>
+<link rel="stylesheet" href="style.css">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%237c5cff'/%3E%3Ctext x='50' y='68' font-family='Arial' font-size='58' font-weight='700' fill='white' text-anchor='middle'%3EN%3C/text%3E%3C/svg%3E">
+</head>
+<body>
+
+<!-- ============================================================
+     BOOT SCREEN
+     ============================================================ -->
+<div id="screen-boot" class="screen active">
+  <div class="boot-logo">NEXORA</div>
+  <div class="boot-tagline">Connect without limits.</div>
+  <div class="spinner" style="margin-top:24px"></div>
+</div>
+
+<!-- ============================================================
+     AUTH SCREEN (login + register + mfa в одном)
+     ============================================================ -->
+<div id="screen-auth" class="screen">
+  <div class="auth-wrap">
+
+    <!-- LOGIN -->
+    <div id="auth-login" class="auth-card">
+      <div class="auth-logo">NEXORA</div>
+      <div class="auth-tagline">Welcome back</div>
+
+      <div class="form-group">
+        <label>Nickname</label>
+        <input id="login-username" type="text" autocomplete="username" placeholder="your_nickname" autofocus>
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input id="login-password" type="password" autocomplete="current-password" placeholder="••••••••">
+      </div>
+      <div id="login-error" class="form-error"></div>
+
+      <button id="btn-login" class="btn btn-primary btn-block">Sign in</button>
+
+      <div class="auth-row">
+        <button id="goto-register" class="btn btn-ghost">Create account</button>
+        <button id="goto-forgot" class="btn btn-ghost">Forgot password?</button>
+      </div>
+    </div>
+
+    <!-- REGISTER -->
+    <div id="auth-register" class="auth-card hidden">
+      <div class="auth-logo">NEXORA</div>
+      <div class="auth-tagline">Create account</div>
+
+      <div class="form-group">
+        <label>Nickname</label>
+        <input id="reg-username" type="text" maxlength="24" placeholder="your_nickname">
+        <small>3–24 символа: буквы, цифры, _</small>
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input id="reg-password" type="password" placeholder="Минимум 8 символов">
+      </div>
+      <div class="form-group">
+        <label>Confirm password</label>
+        <input id="reg-password2" type="password" placeholder="Повтори пароль">
+      </div>
+      <div id="reg-error" class="form-error"></div>
+
+      <button id="btn-register" class="btn btn-primary btn-block">Create account</button>
+      <div class="auth-row">
+        <button id="goto-login" class="btn btn-ghost">Already have an account?</button>
+      </div>
+    </div>
+
+    <!-- MFA -->
+    <div id="auth-mfa" class="auth-card hidden">
+      <div class="auth-logo">NEXORA</div>
+      <div class="auth-tagline">Two-factor authentication</div>
+      <p class="muted">Введи 6-значный код из приложения-аутентификатора</p>
+
+      <div class="form-group">
+        <input id="mfa-code" class="mfa-input" type="text" inputmode="numeric" maxlength="6" placeholder="000000">
+      </div>
+      <div id="mfa-error" class="form-error"></div>
+      <button id="btn-mfa" class="btn btn-primary btn-block">Verify</button>
+      <div class="auth-row">
+        <button id="mfa-cancel" class="btn btn-ghost">Cancel</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ============================================================
+     MAIN APP SCREEN
+     ============================================================ -->
+<div id="screen-app" class="screen">
+  <div class="app">
+
+    <!-- SIDEBAR -->
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar-header">
+        <div class="brand">NEXORA</div>
+        <button id="btn-new-chat" class="icon-btn" title="Новая группа или канал">＋</button>
+      </div>
+
+      <div class="sidebar-search">
+        <input id="search-input" type="text" placeholder="🔍 Найти по NEXORA ID или username" autocomplete="off">
+      </div>
+
+      <nav class="sidebar-tabs">
+        <button class="tab active" data-tab="chats">💬 Чаты</button>
+        <button class="tab" data-tab="favorites">⭐ Избранное</button>
+        <button class="tab" data-tab="contacts">👥 Контакты</button>
+      </nav>
+
+      <div id="sidebar-list" class="sidebar-list"></div>
+
+      <div class="sidebar-footer" id="sidebar-footer">
+        <div class="avatar avatar-md" id="me-avatar">?</div>
+        <div class="sidebar-footer-body">
+          <div class="sidebar-footer-name" id="me-name">—</div>
+          <div class="sidebar-footer-id" id="me-id">—</div>
+        </div>
+        <button id="btn-settings" class="icon-btn" title="Настройки">⚙</button>
+        <button id="btn-logout" class="icon-btn" title="Выйти">⎋</button>
+      </div>
+    </aside>
+
+    <!-- MAIN -->
+    <main class="main" id="main">
+
+      <!-- Welcome -->
+      <div id="welcome" class="welcome">
+        <div class="welcome-logo">NEXORA</div>
+        <div class="welcome-tagline">Connect without limits.</div>
+        <div class="welcome-hint">Найди пользователя по NEXORA ID или выбери чат слева.</div>
+      </div>
+
+      <!-- Chat view -->
+      <div id="chat-view" class="chat-view hidden">
+        <header class="chat-header">
+          <button id="btn-mobile-menu" class="icon-btn mobile-only">☰</button>
+          <div class="avatar avatar-md" id="chat-peer-avatar">?</div>
+          <div class="chat-header-body" id="chat-header-body">
+            <div class="chat-header-name" id="chat-peer-name">—</div>
+            <div class="chat-header-sub" id="chat-peer-sub">—</div>
+          </div>
+          <button id="btn-chat-info" class="icon-btn" title="Информация">ⓘ</button>
+        </header>
+
+        <div class="messages" id="messages"></div>
+
+        <div id="attach-bar" class="attach-bar hidden">
+          <span id="attach-label"></span>
+          <button id="attach-cancel" class="icon-btn">✕</button>
+        </div>
+
+        <div class="composer">
+          <button id="btn-attach" class="icon-btn" title="Прикрепить файл">📎</button>
+          <button id="btn-emoji" class="icon-btn" title="Эмодзи и стикеры">😊</button>
+          <textarea id="composer" rows="1" maxlength="4000"
+                    placeholder="Напиши сообщение…  (Enter — отправить, Shift+Enter — новая строка)"></textarea>
+          <button id="btn-send" class="btn btn-primary send-btn">➤</button>
+        </div>
+      </div>
+
+      <!-- Panel (profile / settings / chat-info / new chat) -->
+      <div id="panel" class="panel hidden">
+        <div class="panel-header">
+          <button id="panel-back" class="icon-btn">←</button>
+          <h2 id="panel-title">Panel</h2>
+        </div>
+        <div class="panel-body" id="panel-body"></div>
+      </div>
+
+    </main>
+  </div>
+</div>
+
+<!-- Hidden file inputs -->
+<input type="file" id="file-avatar" accept="image/png,image/jpeg,image/webp" style="display:none">
+<input type="file" id="file-attach" accept="*/*" style="display:none">
+<input type="file" id="file-sticker" accept="image/*" style="display:none">
+
+<!-- Toast container -->
+<div id="toast-container"></div>
+
+<script type="module" src="app.js"></script>
+</body>
+</html>
