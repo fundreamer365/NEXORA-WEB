@@ -1,6 +1,6 @@
 /* ============================================================
-   NEXORA v3.1 — единый app.js
-   Всё: Supabase, auth, чаты, realtime, storage, UI, звуки.
+   NEXORA v4.0 — единый app.js
+   Всё: Supabase, auth, чаты, realtime, storage, UI, звуки, боты.
    ============================================================ */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
@@ -172,30 +172,25 @@ function svgEmoji(e) {
 }
 
 /* ============================================================
-   SOUND ENGINE — Web Audio API (без файлов)
+   SOUND ENGINE
    ============================================================ */
 class SoundEngine {
   constructor() {
     this.ctx = null;
     this.enabled = localStorage.getItem("nexora-sound") !== "off";
   }
-
   _ensure() {
     if (!this.enabled) return null;
     if (!this.ctx) {
-      try {
-        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-      } catch (_) { return null; }
+      try { this.ctx = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch (_) { return null; }
     }
     if (this.ctx.state === "suspended") this.ctx.resume().catch(() => {});
     return this.ctx;
   }
-
-  /** Разблокировать аудио (вызывать при первом клике по странице) */
   unlock() {
     const ctx = this._ensure();
     if (!ctx) return;
-    // проигрываем пустой буфер — этого достаточно, чтобы Chrome разрешил звук
     try {
       const buf = ctx.createBuffer(1, 1, 22050);
       const src = ctx.createBufferSource();
@@ -204,7 +199,6 @@ class SoundEngine {
       src.start(0);
     } catch (_) {}
   }
-
   _tone(freqs, dur = 0.28, type = "sine", vol = 0.15, stagger = 0.06) {
     const ctx = this._ensure();
     if (!ctx) return;
@@ -224,28 +218,11 @@ class SoundEngine {
       osc.stop(t + dur + 0.05);
     });
   }
-
-  /** Новое сообщение — «ди-дон» (повышающиеся ноты) */
-  message() {
-    this._tone([880, 1174], 0.3, "sine", 0.16, 0.08);
-  }
-  /** Своё сообщение ушло — короткий «пип» */
-  send() {
-    this._tone([1200], 0.12, "sine", 0.08, 0);
-  }
-  /** Ошибка — низкий тон */
-  error() {
-    this._tone([440, 330], 0.35, "sawtooth", 0.10, 0.07);
-  }
-  /** Успех — мажорный аккорд */
-  success() {
-    this._tone([523, 659, 784], 0.35, "sine", 0.12, 0.05);
-  }
-  /** Тихий клик */
-  click() {
-    this._tone([1500], 0.05, "square", 0.04, 0);
-  }
-
+  message() { this._tone([880, 1174], 0.3, "sine", 0.16, 0.08); }
+  send()    { this._tone([1200], 0.12, "sine", 0.08, 0); }
+  error()   { this._tone([440, 330], 0.35, "sawtooth", 0.10, 0.07); }
+  success() { this._tone([523, 659, 784], 0.35, "sine", 0.12, 0.05); }
+  click()   { this._tone([1500], 0.05, "square", 0.04, 0); }
   toggle() {
     this.enabled = !this.enabled;
     localStorage.setItem("nexora-sound", this.enabled ? "on" : "off");
@@ -253,14 +230,13 @@ class SoundEngine {
     return this.enabled;
   }
 }
-
 const Sounds = new SoundEngine();
 
 /* ============================================================
-   БОТЫ (встроенные команды)
+   BOT BUILT-IN COMMANDS
    ============================================================ */
 const BOT_COMMANDS = {
-  "/help": "Доступные команды:\n/time — текущее время\n/weather — не работает 🙂\n/roll 6 — случайное число от 1 до N\n/echo текст — вернуть текст\n/ping — pong",
+  "/help": "Доступные команды:\n/newbot — создать своего бота\n/mybots — список моих ботов\n/time — текущее время\n/roll 6 — случайное число от 1 до N\n/echo текст — вернуть текст\n/ping — pong",
   "/ping": "pong 🏓",
   "/time": () => `Сейчас ${new Date().toLocaleString()}`,
   "/roll": (args) => {
@@ -268,7 +244,8 @@ const BOT_COMMANDS = {
     return `🎲 ${Math.floor(Math.random() * n) + 1} (из ${n})`;
   },
   "/echo": (args) => args.join(" ") || "(пусто)",
-  "/weather": "Погода пока не подключена 😅",
+  "/newbot": () => "Открываю мастер создания бота…",
+  "/mybots": () => "Открываю список твоих ботов…",
 };
 
 /* ============================================================
@@ -300,6 +277,8 @@ class NEXORA {
     this.theme = {};
     this.virtualWindow = 60;
     this.visibleStart = 0;
+    this._activeBotCommands = [];
+    this._swRegistration = null;
 
     this.bindGlobalEvents();
   }
@@ -312,11 +291,12 @@ class NEXORA {
   }
   isPeerOnline(chat) {
     if (!chat?.peer) return false;
+    if (chat.peer.is_bot) return false;
     return !!(chat.peer.is_online && chat.peer.show_online !== false);
   }
 
   /* ============================================================
-     BOOT + PWA + PUSH
+     BOOT
      ============================================================ */
   async boot() {
     this.applyTheme(localStorage.getItem("nexora-theme") || "dark");
@@ -336,8 +316,7 @@ class NEXORA {
   async registerServiceWorker() {
     if (!("serviceWorker" in navigator)) return;
     try {
-      const reg = await navigator.serviceWorker.register("./sw.js");
-      window.__swReg = reg;
+      this._swRegistration = await navigator.serviceWorker.register("./sw.js");
     } catch (e) { console.warn("SW reg failed:", e); }
   }
 
@@ -574,7 +553,7 @@ class NEXORA {
   }
 
   /* ============================================================
-     UNREAD COUNTS
+     UNREAD
      ============================================================ */
   async loadReads() {
     try {
@@ -633,7 +612,7 @@ class NEXORA {
 
   renderChatsList(container) {
     if (!this.chats.length) {
-      container.innerHTML = `<div class="empty-state">Пока нет чатов.<br>Найди пользователя по NEXORA ID или нажми ＋.</div>`;
+      container.innerHTML = `<div class="empty-state">Пока нет чатов.<br>Найди пользователя по NEXORA ID или нику, или нажми ＋.</div>`;
       return;
     }
     this.chats.forEach(chat => {
@@ -654,11 +633,12 @@ class NEXORA {
       if (typers.length) sub = `<em>${escapeHtml(typers.map(t => t.name).join(", "))} печатает…</em>`;
 
       const badge = chat.type === "channel" ? "📢 " : chat.type === "group" ? "👥 " : "";
+      const botBadge = peer.is_bot ? ' <span class="bot-badge">[BOT]</span>' : "";
       div.innerHTML = `
         ${avatarHTML(peer, "md")}
         <div class="list-item-body">
           <div class="list-item-title">
-            <span>${escapeHtml(badge + title)}</span>
+            <span>${escapeHtml(badge + title)}${botBadge}</span>
             <span class="time">${last ? formatTime(last.created_at) : ""}</span>
           </div>
           <div class="list-item-sub">${typers.length ? sub : escapeHtml(sub)}</div>
@@ -815,7 +795,7 @@ class NEXORA {
 
   renderContactsList(container) {
     if (!this.contacts.length) {
-      container.innerHTML = `<div class="empty-state">Нет контактов.<br>Найди пользователя по NEXORA ID.</div>`;
+      container.innerHTML = `<div class="empty-state">Нет контактов.<br>Найди пользователя по NEXORA ID или нику.</div>`;
       return;
     }
     this.contacts.forEach(c => {
@@ -873,7 +853,7 @@ class NEXORA {
   }
 
   /* ============================================================
-     SEARCH USERS
+     SEARCH (по ID и нику)
      ============================================================ */
   async searchUser(query) {
     const q = (query || "").trim();
@@ -885,28 +865,27 @@ class NEXORA {
       if (error) throw error;
       list.innerHTML = "";
       if (!data || !data.length) {
-        list.innerHTML = `<div class="empty-state">Пользователь не найден: ${escapeHtml(q)}</div>`;
+        list.innerHTML = `<div class="empty-state">Никого не нашёл: ${escapeHtml(q)}<br><small>Можно искать по NEXORA ID (NXR-XXXXXX) или нику</small></div>`;
         return;
       }
-      const u = data[0];
-      if (u.id === this.user.id) {
-        list.innerHTML = `<div class="empty-state">Это ты 🙂</div>`;
-        return;
-      }
-      const card = document.createElement("div");
-      card.className = "user-card";
-      card.innerHTML = `
-        ${avatarHTML(u, "md")}
-        <div class="user-card-body">
-          <div class="user-card-name">${escapeHtml(u.username)}</div>
-          <div class="user-card-id">${escapeHtml(u.nexora_id)}</div>
-        </div>
-        <button class="btn btn-primary">Написать</button>`;
-      card.querySelector("button").addEventListener("click", async () => {
-        try { await this.addContact(u.id); } catch (_) {}
-        await this.openDirectChat(u);
+      data.forEach(u => {
+        if (u.id === this.user.id) return;
+        const card = document.createElement("div");
+        card.className = "user-card";
+        const botTag = u.is_bot ? ' <span class="bot-badge">[BOT]</span>' : "";
+        card.innerHTML = `
+          ${avatarHTML(u, "md")}
+          <div class="user-card-body">
+            <div class="user-card-name">${escapeHtml(u.username)}${botTag}</div>
+            <div class="user-card-id">${escapeHtml(u.nexora_id)}</div>
+          </div>
+          <button class="btn btn-primary">Написать</button>`;
+        card.querySelector("button").addEventListener("click", () => this.openDirectChat(u));
+        list.appendChild(card);
       });
-      list.appendChild(card);
+      if (!list.children.length) {
+        list.innerHTML = `<div class="empty-state">Это только ты 🙂</div>`;
+      }
     } catch (e) {
       console.error(e);
       list.innerHTML = `<div class="empty-state">Ошибка поиска.</div>`;
@@ -1007,7 +986,8 @@ class NEXORA {
         .eq("chat_id", data).eq("user_id", this.user.id);
       await this.refreshChats();
       const chat = this.chats.find(c => c.id === data) || {
-        id: data, type: "direct", peer, display_title: peer.username, members_count: 2,
+        id: data, type: "direct", peer,
+        display_title: peer.username, members_count: 2,
       };
       this.openChat(chat);
     } catch (e) {
@@ -1033,9 +1013,11 @@ class NEXORA {
 
     const ctype = chat.type || "direct";
     const badge = ctype === "channel" ? "📢 " : ctype === "group" ? "👥 " : "";
-    $("chat-peer-name").innerHTML = `${escapeHtml(badge + chat.display_title)}
+    const botTag = chat.peer?.is_bot ? ' <span class="bot-badge">[BOT]</span>' : "";
+    $("chat-peer-name").innerHTML = `${escapeHtml(badge + chat.display_title)}${botTag}
       <span class="online-dot${this.isPeerOnline(chat) ? " online" : ""}"></span>`;
-    $("chat-peer-sub").textContent = chat.peer?.nexora_id || (chat.members_count ? `${chat.members_count} участников` : "");
+    $("chat-peer-sub").textContent = chat.peer?.nexora_id ||
+      (chat.members_count ? `${chat.members_count} участников` : "");
     paintAvatar($("chat-peer-avatar"), chat.peer || { username: chat.display_title });
 
     const blocked = ctype === "channel" && !["owner", "admin"].includes(chat.my_role);
@@ -1045,7 +1027,7 @@ class NEXORA {
     $("btn-emoji").disabled = blocked;
     $("composer").placeholder = blocked ? "Писать могут только админы" : "Напиши сообщение…";
 
-    if (window.innerWidth <= 860) $("sidebar").classList.add("hidden-mobile");
+    if (window.innerWidth <= 768) $("sidebar").classList.add("hidden-mobile");
 
     await this.loadChatThemes();
     this.applyChatTheme(chat.id);
@@ -1054,7 +1036,22 @@ class NEXORA {
     await this.loadMembers();
     await this.loadMessages();
     await this.loadReactions();
+
+    // загрузка команд кастомного бота
+    this._activeBotCommands = [];
+    if (chat.peer?.is_bot) {
+      try {
+        const { data } = await supabase
+          .from("custom_bots")
+          .select("commands")
+          .eq("bot_user_id", chat.peer.id)
+          .maybeSingle();
+        if (data?.commands) this._activeBotCommands = data.commands;
+      } catch (_) {}
+    }
+
     this.renderMessages();
+    await this.checkStrangerBanner();
     this.subscribeChat(chat.id);
     this.subscribeTyping(chat.id);
     this.startPolling(chat.id);
@@ -1099,7 +1096,74 @@ class NEXORA {
   }
 
   /* ============================================================
-     RENDER MESSAGES (виртуализация)
+     STRANGER BANNER
+     ============================================================ */
+  async checkStrangerBanner() {
+    const bar = $("stranger-bar");
+    if (!bar) return;
+    bar.classList.add("hidden");
+    bar.innerHTML = "";
+
+    if (!this.activeChat || this.activeChat.type !== "direct") return;
+    const peer = this.activeChat.peer;
+    if (!peer) return;
+    if (peer.is_bot) return;
+
+    // Уже в контактах?
+    const inContacts = this.contacts.some(c => c.id === peer.id);
+    if (inContacts) return;
+
+    // Есть история?
+    if (this.messages.length > 0) return;
+
+    bar.classList.remove("hidden");
+    bar.innerHTML = `
+      <div class="stranger-info">
+        <span class="stranger-icon">⚠️</span>
+        <div>
+          <div class="stranger-title">Незнакомый пользователь</div>
+          <div class="stranger-sub">Вы ещё не переписывались. Будьте осторожны.</div>
+        </div>
+      </div>
+      <div class="stranger-actions">
+        <button class="btn btn-primary" id="stranger-add">+ В контакты</button>
+        <button class="btn btn-danger" id="stranger-block">Заблокировать</button>
+      </div>`;
+
+    bar.querySelector("#stranger-add").addEventListener("click", async () => {
+      try {
+        await this.addContact(peer.id);
+        await this.refreshContacts();
+        bar.classList.add("hidden");
+        toast("Добавлен в контакты", "success");
+        Sounds.success();
+      } catch (e) { toast(e.message || "Ошибка", "error"); }
+    });
+
+    bar.querySelector("#stranger-block").addEventListener("click", async () => {
+      if (!confirm(`Заблокировать @${peer.username}?\nОн не сможет писать тебе.`)) return;
+      try {
+        await this.blockUser(peer.id);
+        bar.classList.add("hidden");
+        this.activeChat = null;
+        $("chat-view").classList.add("hidden");
+        $("welcome").classList.remove("hidden");
+        await this.refreshChats();
+        toast("Пользователь заблокирован", "warning");
+        Sounds.error();
+      } catch (e) { toast(e.message || "Ошибка", "error"); }
+    });
+  }
+
+  async blockUser(userId) {
+    const { error } = await supabase.from("blocks").insert({
+      blocker_id: this.user.id, blocked_id: userId,
+    });
+    if (error && error.code !== "23505") throw error;
+  }
+
+  /* ============================================================
+     RENDER MESSAGES
      ============================================================ */
   renderMessages() {
     const box = $("messages");
@@ -1537,6 +1601,8 @@ class NEXORA {
       Sounds.send();
 
       this.maybeBotReply(data);
+      // Перепроверить баннер — после первого сообщения он исчезнет
+      setTimeout(() => this.checkStrangerBanner(), 200);
     } catch (e) {
       console.error(e);
       toast("Не удалось отправить", "error");
@@ -1554,26 +1620,223 @@ class NEXORA {
     if (!text.startsWith("/")) return;
 
     const [cmd, ...args] = text.split(/\s+/);
-    const handler = BOT_COMMANDS[cmd.toLowerCase()];
-    if (!handler) return;
+    const key = cmd.toLowerCase();
 
-    setTimeout(async () => {
-      const reply = typeof handler === "function" ? handler(args) : handler;
-      try {
-        const { data } = await supabase.from("messages").insert({
-          chat_id: this.activeChat.id,
-          sender_id: this.activeChat.peer.id,
-          content: reply, kind: "text",
-        }).select().single();
-        if (!this.messages.find(m => m.id === data.id)) {
-          this.messages.push(data);
-          this.paintMessageWindow();
-        }
-        Sounds.message();
-      } catch (e) { console.error("bot reply:", e); }
-    }, 500);
+    if (key === "/newbot") {
+      this.deliverBotReply("Открываю мастер создания бота…");
+      setTimeout(() => this.openBotFather(), 300);
+      return;
+    }
+    if (key === "/mybots") {
+      this.deliverBotReply("Открываю список ботов…");
+      setTimeout(() => this.openMyBots(), 300);
+      return;
+    }
+
+    const builtin = BOT_COMMANDS[key];
+    if (builtin) {
+      const reply = typeof builtin === "function" ? builtin(args) : builtin;
+      this.deliverBotReply(reply);
+      return;
+    }
+
+    if (Array.isArray(this._activeBotCommands)) {
+      const custom = this._activeBotCommands.find(
+        c => (c.cmd || "").toLowerCase() === key
+      );
+      if (custom) {
+        this.deliverBotReply(custom.reply || "");
+        return;
+      }
+    }
   }
 
+  async deliverBotReply(text) {
+    if (!this.activeChat) return;
+    try {
+      const { data, error } = await supabase.rpc("bot_reply", {
+        p_chat_id: this.activeChat.id,
+        p_content: text,
+      });
+      if (error) throw error;
+      // realtime придёт сам
+    } catch (e) {
+      console.error("bot_reply:", e);
+      toast("Бот не смог ответить: " + (e.message || ""), "error");
+    }
+  }
+
+  /* ---------- BotFather ---------- */
+  openBotFather() {
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+    backdrop.innerHTML = `
+      <div class="modal" style="max-width:460px">
+        <div class="modal-header"><div class="modal-title">Создание бота</div></div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Username (латиница, 3–24)</label>
+            <input id="bf-username" maxlength="24" placeholder="MyCoolBot">
+            <small>В конце можно не дописывать «bot» — добавится автоматически</small>
+          </div>
+          <div class="form-group">
+            <label>Отображаемое имя</label>
+            <input id="bf-name" maxlength="40" placeholder="My Cool Bot">
+          </div>
+          <div class="form-group">
+            <label>Описание</label>
+            <input id="bf-desc" maxlength="200" placeholder="Что делает бот">
+          </div>
+          <div class="form-group">
+            <label>Команды (по одной на строку: /start Привет!)</label>
+            <textarea id="bf-commands" rows="5" placeholder="/start Привет!/help Помощь"></textarea>
+          </div>
+          <div id="bf-error" class="form-error"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" id="bf-cancel">Отмена</button>
+          <button class="btn btn-primary" id="bf-create">Создать</button>
+        </div>
+      </div>`;
+    document.body.appendChild(backdrop);
+
+    backdrop.querySelector("#bf-cancel").addEventListener("click", () => backdrop.remove());
+    backdrop.querySelector("#bf-create").addEventListener("click", async () => {
+      const username = backdrop.querySelector("#bf-username").value.trim();
+      const name = backdrop.querySelector("#bf-name").value.trim();
+      const desc = backdrop.querySelector("#bf-desc").value.trim();
+      const commandsRaw = backdrop.querySelector("#bf-commands").value;
+      const errEl = backdrop.querySelector("#bf-error");
+      errEl.classList.remove("show");
+
+      if (!/^[a-zA-Z0-9_]{3,24}$/.test(username)) {
+        errEl.textContent = "Username: 3–24, латиница/цифры/_";
+        errEl.classList.add("show");
+        return;
+      }
+
+      const commands = commandsRaw.split("\n").map(line => line.trim()).filter(Boolean).map(line => {
+        const m = line.match(/^(\S+)\s+(.*)$/);
+        if (m) return { cmd: m[1], reply: m[2] };
+        return { cmd: line, reply: "(нет ответа)" };
+      });
+
+      try {
+        const { data, error } = await supabase.rpc("create_custom_bot", {
+          p_username: username,
+          p_display_name: name || username,
+          p_description: desc,
+          p_commands: commands,
+        });
+        if (error) throw error;
+        toast("Бот создан", "success");
+        Sounds.success();
+        backdrop.remove();
+        setTimeout(() => this.openBotChatById(data), 300);
+      } catch (e) {
+        errEl.textContent = e.message || "Ошибка";
+        errEl.classList.add("show");
+        Sounds.error();
+      }
+    });
+  }
+
+  async openMyBots() {
+    try {
+      const { data, error } = await supabase
+        .from("custom_bots")
+        .select("bot_user_id, username, display_name, description, commands, created_at")
+        .eq("owner_id", this.user.id)
+        .order("created_at", { ascending: false });
+      if (error) throw error;
+
+      const backdrop = document.createElement("div");
+      backdrop.className = "modal-backdrop";
+      backdrop.innerHTML = `
+        <div class="modal" style="max-width:460px">
+          <div class="modal-header"><div class="modal-title">Мои боты</div></div>
+          <div class="modal-body" id="mybots-body"></div>
+        </div>`;
+      document.body.appendChild(backdrop);
+      backdrop.addEventListener("click", (e) => { if (e.target === backdrop) backdrop.remove(); });
+
+      const body = backdrop.querySelector("#mybots-body");
+      if (!data.length) {
+        body.innerHTML = `<p class="muted">У тебя пока нет ботов. В чате с HelperBot напиши /newbot</p>`;
+        return;
+      }
+      data.forEach(b => {
+        const row = document.createElement("div");
+        row.className = "settings-row";
+        row.innerHTML = `<div class="settings-row-info">
+          <div class="settings-row-label">${escapeHtml(b.display_name)} <span class="bot-badge">[BOT]</span></div>
+          <div class="settings-row-desc">@${escapeHtml(b.username)} · ${(b.commands || []).length} команд</div>
+        </div>`;
+        const open = document.createElement("button");
+        open.className = "btn btn-ghost"; open.textContent = "Открыть";
+        open.addEventListener("click", () => { backdrop.remove(); this.openBotChatById(b.bot_user_id); });
+        const edit = document.createElement("button");
+        edit.className = "btn btn-ghost"; edit.textContent = "✎"; edit.style.marginLeft = "6px";
+        edit.addEventListener("click", () => { backdrop.remove(); this.openBotEditor(b); });
+        row.appendChild(open); row.appendChild(edit);
+        body.appendChild(row);
+      });
+    } catch (e) { toast("Ошибка загрузки ботов", "error"); }
+  }
+
+  async openBotChatById(botUserId) {
+    try {
+      const res = await supabase.rpc("get_or_create_direct_chat", { other_user: botUserId });
+      if (res.error) throw res.error;
+      await this.refreshChats();
+      const chat = this.chats.find(c => c.id === res.data);
+      if (chat) this.openChat(chat);
+    } catch (e) { toast("Не удалось открыть чат с ботом", "error"); }
+  }
+
+  async openBotEditor(bot) {
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+    backdrop.innerHTML = `
+      <div class="modal" style="max-width:460px">
+        <div class="modal-header"><div class="modal-title">Редактирование @${escapeHtml(bot.username)}</div></div>
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Команды (одна на строку: /start Привет!)</label>
+            <textarea id="be-commands" rows="8">${escapeHtml((bot.commands || []).map(c => `${c.cmd} ${c.reply}`).join("\n"))}</textarea>
+          </div>
+          <div id="be-error" class="form-error"></div>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-ghost" id="be-cancel">Отмена</button>
+          <button class="btn btn-primary" id="be-save">Сохранить</button>
+        </div>
+      </div>`;
+    document.body.appendChild(backdrop);
+    backdrop.querySelector("#be-cancel").addEventListener("click", () => backdrop.remove());
+    backdrop.querySelector("#be-save").addEventListener("click", async () => {
+      const raw = backdrop.querySelector("#be-commands").value;
+      const commands = raw.split("\n").map(l => l.trim()).filter(Boolean).map(line => {
+        const m = line.match(/^(\S+)\s+(.*)$/);
+        if (m) return { cmd: m[1], reply: m[2] };
+        return { cmd: line, reply: "(нет ответа)" };
+      });
+      try {
+        const { error } = await supabase.rpc("update_bot_commands", {
+          p_bot_id: bot.bot_user_id,
+          p_commands: commands,
+        });
+        if (error) throw error;
+        toast("Команды обновлены", "success");
+        Sounds.success();
+        backdrop.remove();
+      } catch (e) { toast(e.message || "Ошибка", "error"); }
+    });
+  }
+
+  /* ============================================================
+     EDIT / DELETE / REACTIONS / FAVORITES
+     ============================================================ */
   async editMessage(msg) {
     const newText = prompt("Новый текст:", msg.content);
     if (newText === null || !newText.trim()) return;
@@ -1772,7 +2035,7 @@ class NEXORA {
   }
 
   /* ============================================================
-     REALTIME + TYPING
+     REALTIME
      ============================================================ */
   subscribeChat(chatId) {
     this.realtimeChannel = supabase.channel("chat:" + chatId)
@@ -1869,20 +2132,14 @@ class NEXORA {
   onRealtimeInsert(m) {
     if (!this.activeChat || m.chat_id !== this.activeChat.id) { this.refreshChats(); return; }
     if (this.messages.find(x => x.id === m.id)) return;
-
-    this.handleBotIncoming(m);
-
     if (m.sender_id === this.user.id) return;
     this.messages.push(m);
     this.paintMessageWindow();
     this.markChatRead(this.activeChat.id);
     this.refreshChats();
-    // звук при входящем
     Sounds.message();
-  }
-
-  handleBotIncoming(m) {
-    // обрабатывается в maybeBotReply при отправке
+    // Баннер незнакомца — если это первое сообщение от незнакомца, всё равно покажем
+    // (можно и убрать, но пусть пользователь увидит, кто это)
   }
 
   onRealtimeUpdate(m) {
@@ -1902,7 +2159,8 @@ class NEXORA {
       Object.assign(this.activePeer, p);
       if (this.activeChat) {
         const badge = this.activeChat.type === "channel" ? "📢 " : this.activeChat.type === "group" ? "👥 " : "";
-        $("chat-peer-name").innerHTML = `${escapeHtml(badge + (this.activeChat.display_title || p.username))}
+        const botTag = this.activePeer.is_bot ? ' <span class="bot-badge">[BOT]</span>' : "";
+        $("chat-peer-name").innerHTML = `${escapeHtml(badge + (this.activeChat.display_title || p.username))}${botTag}
           <span class="online-dot${this.isPeerOnline(this.activeChat) ? " online" : ""}"></span>`;
       }
     }
@@ -1980,7 +2238,6 @@ class NEXORA {
       notifRow.appendChild(notifBtn);
       notif.appendChild(notifRow);
 
-      // Sound toggle
       const soundRow = document.createElement("div");
       soundRow.className = "settings-row";
       soundRow.innerHTML = `<div class="settings-row-info">
@@ -2043,12 +2300,26 @@ class NEXORA {
       privacy.appendChild(this.toggleRow("Показывать онлайн-статус", this.profile.show_online, (v) => {
         this.updateProfile({ show_online: v }).then(() => toast("Сохранено", "success"));
       }));
-      privacy.appendChild(this.toggleRow("Можно найти по NEXORA ID", this.profile.findable, (v) => {
+      privacy.appendChild(this.toggleRow("Можно найти по NEXORA ID или нику", this.profile.findable, (v) => {
         this.updateProfile({ findable: v }).then(() => toast("Сохранено", "success"));
       }));
       body.appendChild(privacy);
 
-      // Search
+      // Bots
+      const botsSec = document.createElement("div");
+      botsSec.className = "settings-section";
+      botsSec.innerHTML = `<h3>🤖 Боты</h3>
+        <p style="color:var(--text-2);font-size:13px;margin-bottom:10px">
+          Чтобы создать своего бота, открой чат с <b>HelperBot</b> (найди по NXR-BOT001) и напиши <code>/newbot</code>.
+        </p>`;
+      const myBotsBtn = document.createElement("button");
+      myBotsBtn.className = "btn btn-primary";
+      myBotsBtn.textContent = "Мои боты";
+      myBotsBtn.addEventListener("click", () => { this.hidePanel(); this.openMyBots(); });
+      botsSec.appendChild(myBotsBtn);
+      body.appendChild(botsSec);
+
+      // Search messages
       const searchSec = document.createElement("div");
       searchSec.className = "settings-section";
       searchSec.innerHTML = `<h3>🔍 Поиск по сообщениям</h3>`;
@@ -2065,7 +2336,7 @@ class NEXORA {
       about.innerHTML = `<h3>ℹ О приложении</h3>
         <div style="color:var(--text-0);font-weight:700">NEXORA</div>
         <div style="color:var(--text-2);font-size:13px;margin-top:4px">Connect without limits.</div>
-        <div style="color:var(--text-3);font-size:12px;margin-top:6px">Version 3.1</div>`;
+        <div style="color:var(--text-3);font-size:12px;margin-top:6px">Version 4.0</div>`;
       body.appendChild(about);
 
       const out = document.createElement("button");
@@ -2575,7 +2846,7 @@ class NEXORA {
         $("sidebar").classList.toggle("hidden-mobile");
       });
       $("sidebar").addEventListener("click", (e) => {
-        if (window.innerWidth <= 860 && e.target.closest(".list-item")) {
+        if (window.innerWidth <= 768 && e.target.closest(".list-item")) {
           $("sidebar").classList.add("hidden-mobile");
         }
       });
@@ -2591,7 +2862,6 @@ class NEXORA {
         } catch (err) { toast(err.message || "Ошибка", "error"); }
       });
 
-      // Разбудить аудио при первом клике
       document.addEventListener("click", (e) => {
         if (!e.target.closest(".ctx-menu")) this.closeContextMenu();
         Sounds.unlock();
@@ -2604,6 +2874,11 @@ class NEXORA {
         document.body.style.setProperty("--parallax-x", `${x}px`);
         document.body.style.setProperty("--parallax-y", `${y}px`);
       });
+
+      // На телефоне при старте спрятать сайдбар, если открыт чат
+      if (window.innerWidth <= 768) {
+        $("sidebar").classList.remove("hidden-mobile");
+      }
 
       this.boot().catch(err => {
         console.error(err);
