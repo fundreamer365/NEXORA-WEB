@@ -883,6 +883,93 @@ audio {
 }
 
 
+/* ---------- Stranger banner ---------- */
+#stranger-bar {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 12px 16px;
+  background: rgba(255,181,71,0.10);
+  border-bottom: 1px solid rgba(255,181,71,0.35);
+  color: var(--text-0);
+  animation: slideDown 0.3s;
+}
+@keyframes slideDown { from { transform: translateY(-10px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+.stranger-info { display: flex; gap: 12px; align-items: flex-start; }
+.stranger-icon { font-size: 22px; line-height: 1; }
+.stranger-title { font-size: 13px; font-weight: 700; color: var(--warning); }
+.stranger-sub { font-size: 12px; color: var(--text-2); margin-top: 2px; }
+.stranger-actions { display: flex; gap: 8px; }
+.stranger-actions .btn { padding: 8px 14px; font-size: 13px; }
+
+/* ---------- Мобильная адаптация ---------- */
+@media (max-width: 768px) {
+  html, body { overflow: hidden; }
+  .app { display: block; height: 100vh; height: 100dvh; position: relative; }
+
+  .sidebar {
+    position: absolute; inset: 0;
+    width: 100% !important;
+    z-index: 10;
+    transition: transform 0.28s cubic-bezier(.4,0,.2,1);
+  }
+  .sidebar.hidden-mobile { transform: translateX(-100%); }
+
+  .main { position: absolute; inset: 0; z-index: 5; }
+
+  .chat-header { padding: 10px 12px; gap: 8px; }
+  .chat-header-name { font-size: 14px; }
+  .chat-header-sub { font-size: 11px; }
+  .avatar-md { width: 38px; height: 38px; font-size: 15px; }
+  .mobile-only { display: inline-flex; }
+
+  .messages { padding: 12px 10px; gap: 4px; }
+  .msg-row { max-width: 88%; }
+  .msg-bubble { padding: 8px 12px; font-size: 14px; border-radius: 14px; }
+  .msg-image, .msg-video { max-width: 100%; max-height: 60vh; }
+
+  .composer { padding: 8px; gap: 4px; }
+  .composer textarea { font-size: 15px; padding: 10px 12px; }
+  .composer .icon-btn { width: 40px; height: 40px; font-size: 18px; }
+  .send-btn { width: 46px; height: 46px; font-size: 20px; padding: 0; }
+
+  .sidebar-header { padding: 12px 14px; }
+  .brand { font-size: 16px; letter-spacing: 2px; }
+  .sidebar-search { padding: 8px 12px; }
+  .sidebar-search input { padding: 10px 12px; font-size: 14px; }
+  .sidebar-tabs { padding: 6px 8px 0; }
+  .tab { padding: 8px 6px; font-size: 12px; }
+  .sidebar-list { padding: 6px; }
+  .list-item { padding: 10px 12px; }
+  .list-item-title { font-size: 14px; }
+  .list-item-sub { font-size: 12px; }
+
+  .panel-body { padding: 16px 12px; }
+  .settings-section { padding: 16px; }
+  .settings-row-label { font-size: 13px; }
+  .settings-row-desc { font-size: 11px; }
+  .profile-hero .avatar-xl { width: 88px; height: 88px; font-size: 32px; }
+  .profile-hero-name { font-size: 18px; }
+
+  .modal { max-width: calc(100% - 24px) !important; margin: 12px; }
+  .modal-body { padding: 16px; }
+  .modal-header { padding: 14px 16px; }
+  .modal-footer { padding: 12px 16px; }
+
+  .picker { left: 6px; right: 6px; height: 340px; }
+  .picker-body { grid-template-columns: repeat(7, 1fr); padding: 8px; }
+  .picker-body.stickers { grid-template-columns: repeat(3, 1fr); }
+
+  .toast-container { top: 10px; right: 10px; left: 10px; max-width: none; }
+
+  .auth-card { padding: 28px 20px; }
+  .auth-logo { font-size: 28px; }
+}
+
+@media (max-width: 380px) {
+  .msg-row { max-width: 92%; }
+  .chat-header { padding: 8px; }
+}
+
+
 /* ---------- Mobile ---------- */
 .mobile-only { display: none; }
 
