@@ -1,5 +1,6 @@
 /* ============================================================
-   NEXORA v3.0 — единый app.js
+   NEXORA v3.1 — единый app.js
+   Всё: Supabase, auth, чаты, realtime, storage, UI, звуки.
    ============================================================ */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
@@ -20,7 +21,6 @@ const STICKER_MAX = 2 * 1024 * 1024;
 const POLL_MS = 2500;
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "🔥", "😮", "😢"];
 const TYPING_TIMEOUT_MS = 3000;
-const SOUND_RECEIVE = "data:audio/wav;base64,UklGRl9vT19XQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: true, autoRefreshToken: true, storageKey: "nexora-auth" },
@@ -68,7 +68,7 @@ function humanSize(n) {
   return `${v >= 10 || i === 0 ? v.toFixed(0) : v.toFixed(1)} ${u[i]}`;
 }
 
-/* --------- Markdown --------- */
+/* --------- Markdown (безопасный) --------- */
 function renderMarkdown(raw) {
   let t = escapeHtml(raw);
   t = t.replace(/`([^`\n]+)`/g, "<code>$1</code>");
@@ -172,7 +172,92 @@ function svgEmoji(e) {
 }
 
 /* ============================================================
-   БОТЫ (встроенные ответчики, работают локально в клиенте)
+   SOUND ENGINE — Web Audio API (без файлов)
+   ============================================================ */
+class SoundEngine {
+  constructor() {
+    this.ctx = null;
+    this.enabled = localStorage.getItem("nexora-sound") !== "off";
+  }
+
+  _ensure() {
+    if (!this.enabled) return null;
+    if (!this.ctx) {
+      try {
+        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      } catch (_) { return null; }
+    }
+    if (this.ctx.state === "suspended") this.ctx.resume().catch(() => {});
+    return this.ctx;
+  }
+
+  /** Разблокировать аудио (вызывать при первом клике по странице) */
+  unlock() {
+    const ctx = this._ensure();
+    if (!ctx) return;
+    // проигрываем пустой буфер — этого достаточно, чтобы Chrome разрешил звук
+    try {
+      const buf = ctx.createBuffer(1, 1, 22050);
+      const src = ctx.createBufferSource();
+      src.buffer = buf;
+      src.connect(ctx.destination);
+      src.start(0);
+    } catch (_) {}
+  }
+
+  _tone(freqs, dur = 0.28, type = "sine", vol = 0.15, stagger = 0.06) {
+    const ctx = this._ensure();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    freqs.forEach((f, i) => {
+      const t = now + i * stagger;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.type = type;
+      osc.frequency.setValueAtTime(f, t);
+      gain.gain.setValueAtTime(0.0001, t);
+      gain.gain.exponentialRampToValueAtTime(vol, t + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      osc.start(t);
+      osc.stop(t + dur + 0.05);
+    });
+  }
+
+  /** Новое сообщение — «ди-дон» (повышающиеся ноты) */
+  message() {
+    this._tone([880, 1174], 0.3, "sine", 0.16, 0.08);
+  }
+  /** Своё сообщение ушло — короткий «пип» */
+  send() {
+    this._tone([1200], 0.12, "sine", 0.08, 0);
+  }
+  /** Ошибка — низкий тон */
+  error() {
+    this._tone([440, 330], 0.35, "sawtooth", 0.10, 0.07);
+  }
+  /** Успех — мажорный аккорд */
+  success() {
+    this._tone([523, 659, 784], 0.35, "sine", 0.12, 0.05);
+  }
+  /** Тихий клик */
+  click() {
+    this._tone([1500], 0.05, "square", 0.04, 0);
+  }
+
+  toggle() {
+    this.enabled = !this.enabled;
+    localStorage.setItem("nexora-sound", this.enabled ? "on" : "off");
+    if (this.enabled) this.success();
+    return this.enabled;
+  }
+}
+
+const Sounds = new SoundEngine();
+
+/* ============================================================
+   БОТЫ (встроенные команды)
    ============================================================ */
 const BOT_COMMANDS = {
   "/help": "Доступные команды:\n/time — текущее время\n/weather — не работает 🙂\n/roll 6 — случайное число от 1 до N\n/echo текст — вернуть текст\n/ping — pong",
@@ -201,8 +286,8 @@ class NEXORA {
     this.messages = [];
     this.members = [];
     this.reactions = {};
-    this.reads = {};          // { chat_id: last_read_at_iso }
-    this.typingUsers = {};    // { chat_id: {user_id: {name, ts}} }
+    this.reads = {};
+    this.typingUsers = {};
     this.pendingAttachment = null;
     this.pendingReplyTo = null;
     this.realtimeChannel = null;
@@ -213,8 +298,6 @@ class NEXORA {
     this.searchTimeout = null;
     this.messageSearchQuery = "";
     this.theme = {};
-
-    // Виртуальный список сообщений: размер окна
     this.virtualWindow = 60;
     this.visibleStart = 0;
 
@@ -280,16 +363,8 @@ class NEXORA {
     } catch (e) { console.warn("notify:", e); }
   }
 
-  playReceiveSound() {
-    try {
-      const a = new Audio(SOUND_RECEIVE);
-      a.volume = 0.4;
-      a.play().catch(() => {});
-    } catch (_) {}
-  }
-
   /* ============================================================
-     AUTH (login / register / mfa)
+     AUTH
      ============================================================ */
   showAuthCard(which) {
     ["login", "register", "mfa"].forEach(k => {
@@ -305,6 +380,7 @@ class NEXORA {
   showError(id, msg) {
     const el = $(id); if (!el) return;
     el.textContent = msg; el.classList.add("show");
+    Sounds.error();
   }
   validateUsername(u) {
     if (!u) return "Введи nickname";
@@ -334,6 +410,7 @@ class NEXORA {
       if (error) throw error;
       if (data.user?.identities?.length === 0) throw new Error("Такой nickname уже занят");
       toast("Аккаунт создан. Входим…", "success");
+      Sounds.success();
       await this.doLogin(u, p1, true);
     } catch (e) {
       this.showError("reg-error", e.message || "Ошибка регистрации");
@@ -364,8 +441,7 @@ class NEXORA {
         const { data: factors } = await supabase.auth.mfa.listFactors();
         const hasTotp = (factors?.totp || []).some(f => f.status === "verified");
         if (hasTotp) {
-          const { data: aal } = await supabase.auth.mfa.getAuthenticatorLevel?.() ||
-            await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
+          const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
           if (aal?.currentLevel === "aal1" && aal?.nextLevel === "aal2") {
             this.showScreen("screen-auth");
             this.showAuthCard("mfa");
@@ -376,6 +452,7 @@ class NEXORA {
 
       await this.loadProfile();
       toast("Добро пожаловать!", "success");
+      Sounds.success();
       this.enterApp();
     } catch (e) {
       const msg = /invalid/i.test(e.message || "") ? "Неверный логин или пароль" : (e.message || "Ошибка входа");
@@ -405,6 +482,7 @@ class NEXORA {
       if (error) throw error;
       await this.loadProfile();
       toast("Проверено", "success");
+      Sounds.success();
       this.enterApp();
     } catch (e) {
       this.showError("mfa-error", e.message || "Неверный код");
@@ -477,6 +555,7 @@ class NEXORA {
     await this.refreshChats();
     await this.refreshContacts();
     await this.loadReads();
+    await this.loadChatThemes();
     this.subscribeProfiles();
     this.subscribeGlobalMessages();
     this.setupUnreadTitleUpdater();
@@ -495,7 +574,7 @@ class NEXORA {
   }
 
   /* ============================================================
-     UNREAD COUNTS + TITLE BADGE
+     UNREAD COUNTS
      ============================================================ */
   async loadReads() {
     try {
@@ -540,6 +619,7 @@ class NEXORA {
      ============================================================ */
   setTab(tab) {
     this.activeTab = tab;
+    Sounds.click();
     $$(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === tab));
     this.renderSidebarList();
   }
@@ -585,8 +665,6 @@ class NEXORA {
         </div>
         ${unread ? `<div class="list-item-badge">${unread}</div>` : ""}`;
       div.addEventListener("click", () => this.openChat(chat));
-
-      // Удаление чата для себя: правый клик
       div.addEventListener("contextmenu", (e) => {
         e.preventDefault();
         this.openChatContextMenu(e, chat);
@@ -626,6 +704,7 @@ class NEXORA {
         .update({ hidden_until: new Date().toISOString() })
         .eq("chat_id", chat.id).eq("user_id", this.user.id);
       toast("Чат удалён у тебя", "warning");
+      Sounds.click();
       await this.refreshChats();
       if (this.activeChat?.id === chat.id) {
         this.activeChat = null;
@@ -701,6 +780,7 @@ class NEXORA {
         this.theme[chat.id] = { accent: picked, wallpaper_url: wp || null };
         this.applyChatTheme(chat.id);
         toast("Тема сохранена", "success");
+        Sounds.success();
         backdrop.remove();
       } catch (e) { toast(e.message || "Ошибка", "error"); }
     });
@@ -793,7 +873,7 @@ class NEXORA {
   }
 
   /* ============================================================
-     SEARCH USERS + MESSAGES
+     SEARCH USERS
      ============================================================ */
   async searchUser(query) {
     const q = (query || "").trim();
@@ -866,7 +946,12 @@ class NEXORA {
         .eq("user_id", this.user.id);
       const visible = (mem || []).filter(m => !m.hidden_until);
       const ids = visible.map(m => m.chat_id);
-      if (!ids.length) { this.chats = []; if (this.activeTab === "chats") this.renderSidebarList(); this.updatePageTitle(); return; }
+      if (!ids.length) {
+        this.chats = [];
+        if (this.activeTab === "chats") this.renderSidebarList();
+        this.updatePageTitle();
+        return;
+      }
 
       const [{ data: chats }, { data: members }, { data: msgs }] = await Promise.all([
         supabase.from("chats").select("id, is_group, title, type, description, avatar_url, updated_at, owner_id").in("id", ids),
@@ -885,17 +970,11 @@ class NEXORA {
         const last = lastBy[c.id];
         const ctype = c.type || (c.is_group ? "group" : "direct");
         return {
-          id: c.id,
-          is_group: c.is_group,
-          type: ctype,
-          title: c.title,
-          description: c.description,
-          avatar_url: c.avatar_url,
-          owner_id: c.owner_id,
-          updated_at: c.updated_at,
-          my_role: myMem?.role || "member",
-          peer,
-          display_title: peer?.username || c.title || "Chat",
+          id: c.id, is_group: c.is_group, type: ctype,
+          title: c.title, description: c.description,
+          avatar_url: c.avatar_url, owner_id: c.owner_id,
+          updated_at: c.updated_at, my_role: myMem?.role || "member",
+          peer, display_title: peer?.username || c.title || "Chat",
           members_count: mems.length,
           last_message: last ? {
             content: last.content || "",
@@ -923,7 +1002,6 @@ class NEXORA {
     try {
       const { data, error } = await supabase.rpc("get_or_create_direct_chat", { other_user: peer.id });
       if (error) throw error;
-      // Если чат был скрыт — вернём его
       await supabase.from("chat_members")
         .update({ hidden_until: null })
         .eq("chat_id", data).eq("user_id", this.user.id);
@@ -948,6 +1026,7 @@ class NEXORA {
     this.activeChat = chat;
     this.activePeer = chat.peer || null;
     this.pendingReplyTo = null;
+    Sounds.click();
 
     $("welcome").classList.add("hidden");
     $("chat-view").classList.remove("hidden");
@@ -1031,7 +1110,6 @@ class NEXORA {
       return;
     }
 
-    // Виртуализация: показываем последние N + подгрузка вверх при скролле
     this.visibleStart = Math.max(0, this.messages.length - this.virtualWindow);
     this.paintMessageWindow();
 
@@ -1046,9 +1124,7 @@ class NEXORA {
     };
     box.addEventListener("scroll", this._onScrollHandler);
 
-    if (this.messageSearchQuery) {
-      this.highlightSearch();
-    }
+    if (this.messageSearchQuery) this.highlightSearch();
   }
 
   paintMessageWindow() {
@@ -1063,7 +1139,6 @@ class NEXORA {
       box.appendChild(more);
     }
 
-    // Закреплённые сверху
     const pinned = this.messages.filter(m => m.pinned);
     if (pinned.length) {
       const pinBar = document.createElement("div");
@@ -1105,7 +1180,6 @@ class NEXORA {
     bubble.className = "msg-bubble";
     if (m.pinned) bubble.classList.add("pinned");
 
-    // Reply preview
     if (m.reply_to) {
       const parent = this.messages.find(x => x.id === m.reply_to);
       if (parent) {
@@ -1123,7 +1197,6 @@ class NEXORA {
       }
     }
 
-    // Sender name for groups
     const ctype = this.activeChat?.type || "direct";
     if (!isOwn && ctype !== "direct") {
       const h = document.createElement("div");
@@ -1132,13 +1205,11 @@ class NEXORA {
       bubble.appendChild(h);
     }
 
-    // Content
     const content = document.createElement("div");
     content.className = "msg-content";
     this.renderMessageContent(content, m);
     bubble.appendChild(content);
 
-    // Reactions (chips)
     const rx = this.reactions[m.id] || {};
     const rxKeys = Object.keys(rx);
     if (rxKeys.length) {
@@ -1162,7 +1233,6 @@ class NEXORA {
 
     row.appendChild(bubble);
 
-    // Single-tap реакция: двойной клик
     let clickTimer = null;
     row.addEventListener("click", (e) => {
       if (e.target.closest("a")) return;
@@ -1174,7 +1244,6 @@ class NEXORA {
       }
     });
 
-    // Context menu
     row.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       this.openMessageContextMenu(e, m, isOwn);
@@ -1294,7 +1363,7 @@ class NEXORA {
   }
 
   /* ============================================================
-     MESSAGE CONTEXT MENU
+     CONTEXT MENU
      ============================================================ */
   openMessageContextMenu(event, msg, isOwn) {
     this.closeContextMenu();
@@ -1324,9 +1393,10 @@ class NEXORA {
     mk("📋 Копировать", () => {
       navigator.clipboard.writeText(msg.content || msg.attachment_url || "");
       toast("Скопировано", "success");
+      Sounds.click();
     });
     mk("⭐ В избранное", () => this.saveToFavorites(msg));
-    mk(msg.pinned ? "📌 Открепить" : "📌 Закрепить", () => this.togglePin(msg), false);
+    mk(msg.pinned ? "📌 Открепить" : "📌 Закрепить", () => this.togglePin(msg));
     mk("↪ Переслать", () => this.forwardMessage(msg));
     if (isOwn) mk("🗑 Удалить", () => this.deleteMessage(msg), true);
 
@@ -1345,7 +1415,7 @@ class NEXORA {
   closeContextMenu() { const m = $("ctx-menu"); if (m) m.remove(); }
 
   /* ============================================================
-     REPLY
+     REPLY / PIN / FORWARD
      ============================================================ */
   setReplyTo(msg) {
     this.pendingReplyTo = msg;
@@ -1370,9 +1440,6 @@ class NEXORA {
     if (bar) { bar.classList.add("hidden"); bar.innerHTML = ""; }
   }
 
-  /* ============================================================
-     PIN / FORWARD
-     ============================================================ */
   async togglePin(msg) {
     try {
       const next = !msg.pinned;
@@ -1382,8 +1449,9 @@ class NEXORA {
       if (error) throw error;
       const i = this.messages.findIndex(m => m.id === msg.id);
       if (i >= 0) this.messages[i] = data;
-      this.renderMessages();
+      this.paintMessageWindow();
       toast(next ? "Закреплено" : "Откреплено", "success");
+      Sounds.click();
     } catch (e) { toast(e.message || "Ошибка", "error"); }
   }
 
@@ -1416,6 +1484,7 @@ class NEXORA {
             sticker_id: msg.sticker_id,
           });
           toast("Переслано", "success");
+          Sounds.send();
           backdrop.remove();
         } catch (e) { toast(e.message || "Ошибка", "error"); }
       });
@@ -1465,8 +1534,8 @@ class NEXORA {
       }
       this.hideReplyPreview();
       this.refreshChats();
+      Sounds.send();
 
-      // Bot auto-reply
       this.maybeBotReply(data);
     } catch (e) {
       console.error(e);
@@ -1475,16 +1544,9 @@ class NEXORA {
   }
 
   /* ============================================================
-     BOTS: встроенные команды
+     BOTS
      ============================================================ */
   maybeBotReply(msg) {
-    if (msg.sender_id === this.user.id) return;
-    return; // боты обрабатывают входящие
-  }
-
-  /* Обработчик входящего сообщения, если это бот */
-  async handleBotIncoming(msg) {
-    // Определяем, что чат с ботом — peer.is_bot
     if (!this.activeChat?.peer?.is_bot) return;
     if (msg.sender_id !== this.user.id) return;
 
@@ -1507,6 +1569,7 @@ class NEXORA {
           this.messages.push(data);
           this.paintMessageWindow();
         }
+        Sounds.message();
       } catch (e) { console.error("bot reply:", e); }
     }, 500);
   }
@@ -1524,6 +1587,7 @@ class NEXORA {
       if (i >= 0) this.messages[i] = data;
       this.paintMessageWindow();
       toast("Изменено", "success");
+      Sounds.click();
     } catch (e) { toast("Ошибка", "error"); }
   }
 
@@ -1535,6 +1599,7 @@ class NEXORA {
       this.messages = this.messages.filter(m => m.id !== msg.id);
       this.paintMessageWindow();
       toast("Удалено", "success");
+      Sounds.click();
     } catch (e) { toast("Ошибка", "error"); }
   }
 
@@ -1552,6 +1617,7 @@ class NEXORA {
           message_id: messageId, user_id: this.user.id, emoji,
         });
       }
+      Sounds.click();
       await this.loadReactions();
       this.paintMessageWindow();
     } catch (e) { console.error(e); }
@@ -1564,11 +1630,12 @@ class NEXORA {
       });
       if (error && error.code !== "23505") throw error;
       toast("Сохранено в избранное", "success");
+      Sounds.success();
     } catch (e) { toast("Ошибка", "error"); }
   }
 
   /* ============================================================
-     ATTACHMENTS + VOICE
+     ATTACHMENTS
      ============================================================ */
   async pickAttachment() {
     if (!this.activeChat) return;
@@ -1579,7 +1646,6 @@ class NEXORA {
       if (file.size > ATTACH_MAX) return toast("Файл больше 50 MB", "warning");
       try {
         toast("Загрузка…", "info");
-        const ext = (file.name.split(".").pop() || "bin").toLowerCase();
         const safeName = file.name.replace(/[^\w.\-]+/g, "_").slice(0, 80);
         const path = `${this.user.id}/${this.activeChat.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}`;
         const { error: upErr } = await supabase.storage
@@ -1593,6 +1659,7 @@ class NEXORA {
         $("attach-label").textContent = `📎 ${file.name} (${humanSize(file.size)}) — Enter для отправки`;
         $("attach-bar").classList.remove("hidden");
         toast("Готово", "success");
+        Sounds.click();
       } catch (e) {
         console.error(e); toast("Не удалось загрузить", "error");
       }
@@ -1607,7 +1674,7 @@ class NEXORA {
   }
 
   /* ============================================================
-     EMOJI / STICKERS PICKER
+     PICKER
      ============================================================ */
   openPicker() {
     const existing = $("picker");
@@ -1700,6 +1767,7 @@ class NEXORA {
       }
       this.hideReplyPreview();
       this.refreshChats();
+      Sounds.send();
     } catch (e) { console.error(e); toast("Ошибка стикера", "error"); }
   }
 
@@ -1782,13 +1850,13 @@ class NEXORA {
           const m = p.new;
           if (!m || m.sender_id === this.user.id) return;
           if (this.activeChat && m.chat_id === this.activeChat.id) return;
-          // Инкрементально обновим список
+
           this.refreshChats();
-          // Уведомление
+
           const chat = this.chats.find(c => c.id === m.chat_id);
           const title = chat?.display_title || "NEXORA";
           this.notify(title, m.content || "Новое сообщение");
-          this.playReceiveSound();
+          Sounds.message();
         })
       .subscribe();
   }
@@ -1802,7 +1870,6 @@ class NEXORA {
     if (!this.activeChat || m.chat_id !== this.activeChat.id) { this.refreshChats(); return; }
     if (this.messages.find(x => x.id === m.id)) return;
 
-    // бот
     this.handleBotIncoming(m);
 
     if (m.sender_id === this.user.id) return;
@@ -1810,6 +1877,12 @@ class NEXORA {
     this.paintMessageWindow();
     this.markChatRead(this.activeChat.id);
     this.refreshChats();
+    // звук при входящем
+    Sounds.message();
+  }
+
+  handleBotIncoming(m) {
+    // обрабатывается в maybeBotReply при отправке
   }
 
   onRealtimeUpdate(m) {
@@ -1859,7 +1932,7 @@ class NEXORA {
   stopPolling() { if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = null; } }
 
   /* ============================================================
-     SETTINGS / PROFILE / PANEL
+     PANELS
      ============================================================ */
   showPanel(title, bodyBuilder) {
     $("panel").classList.remove("hidden");
@@ -1876,6 +1949,7 @@ class NEXORA {
         this.row("NEXORA ID", this.profile.nexora_id, () => {
           navigator.clipboard.writeText(this.profile.nexora_id);
           toast("ID скопирован", "success");
+          Sounds.click();
         }, "Copy"),
       ]));
 
@@ -1884,7 +1958,7 @@ class NEXORA {
         this.row("2FA", "TOTP-аутентификация", () => this.toggle2FA()),
       ]));
 
-      // Notifications toggle
+      // Notifications
       const notif = document.createElement("div");
       notif.className = "settings-section";
       notif.innerHTML = `<h3>🔔 Уведомления</h3>`;
@@ -1901,9 +1975,35 @@ class NEXORA {
         const ok = await this.requestNotificationPermission();
         notifRow.querySelector("#notif-status").textContent = Notification.permission;
         toast(ok ? "Уведомления включены" : "Не разрешено", ok ? "success" : "warning");
+        ok ? Sounds.success() : Sounds.error();
       });
       notifRow.appendChild(notifBtn);
       notif.appendChild(notifRow);
+
+      // Sound toggle
+      const soundRow = document.createElement("div");
+      soundRow.className = "settings-row";
+      soundRow.innerHTML = `<div class="settings-row-info">
+        <div class="settings-row-label">Звук уведомлений</div>
+        <div class="settings-row-desc">Проигрывать сигнал при новом сообщении</div>
+      </div>`;
+      const sw = document.createElement("div");
+      sw.className = "switch" + (Sounds.enabled ? " on" : "");
+      sw.addEventListener("click", () => {
+        const on = Sounds.toggle();
+        sw.classList.toggle("on", on);
+        toast(on ? "Звук включён" : "Звук выключен", "success");
+      });
+      soundRow.appendChild(sw);
+      notif.appendChild(soundRow);
+
+      const testBtn = document.createElement("button");
+      testBtn.className = "btn btn-ghost";
+      testBtn.textContent = "🔊 Проверить звук";
+      testBtn.style.marginTop = "10px";
+      testBtn.addEventListener("click", () => Sounds.message());
+      notif.appendChild(testBtn);
+
       body.appendChild(notif);
 
       // Appearance
@@ -1928,6 +2028,7 @@ class NEXORA {
           themeBox.querySelectorAll("button").forEach(x => x.className = "btn btn-ghost");
           b.className = "btn btn-primary";
           toast("Тема: " + t, "success");
+          Sounds.click();
         });
         themeBox.appendChild(b);
       });
@@ -1947,7 +2048,7 @@ class NEXORA {
       }));
       body.appendChild(privacy);
 
-      // Search messages
+      // Search
       const searchSec = document.createElement("div");
       searchSec.className = "settings-section";
       searchSec.innerHTML = `<h3>🔍 Поиск по сообщениям</h3>`;
@@ -1964,7 +2065,7 @@ class NEXORA {
       about.innerHTML = `<h3>ℹ О приложении</h3>
         <div style="color:var(--text-0);font-weight:700">NEXORA</div>
         <div style="color:var(--text-2);font-size:13px;margin-top:4px">Connect without limits.</div>
-        <div style="color:var(--text-3);font-size:12px;margin-top:6px">Version 3.0</div>`;
+        <div style="color:var(--text-3);font-size:12px;margin-top:6px">Version 3.1</div>`;
       body.appendChild(about);
 
       const out = document.createElement("button");
@@ -2000,7 +2101,6 @@ class NEXORA {
     } catch (e) { toast("Ошибка поиска", "error"); }
   }
 
-  /* Panel helpers */
   section(title, rows) {
     const s = document.createElement("div");
     s.className = "settings-section";
@@ -2033,6 +2133,7 @@ class NEXORA {
     sw.addEventListener("click", () => {
       const next = !sw.classList.contains("on");
       sw.classList.toggle("on", next);
+      Sounds.click();
       onChange(next);
     });
     r.appendChild(sw);
@@ -2051,6 +2152,7 @@ class NEXORA {
       hero.querySelector("#profile-id").addEventListener("click", () => {
         navigator.clipboard.writeText(this.profile.nexora_id);
         toast("ID скопирован", "success");
+        Sounds.click();
       });
 
       const uploadBtn = document.createElement("button");
@@ -2076,6 +2178,7 @@ class NEXORA {
           await this.updateProfile({ username: v });
           this.renderSidebarFooter();
           toast("Username обновлён", "success");
+          Sounds.success();
         } catch (e) { toast(e.message || "Ошибка", "error"); }
       });
       unameSec.appendChild(unameInput);
@@ -2095,6 +2198,7 @@ class NEXORA {
         try {
           await this.updateProfile({ about: ta.value.slice(0, 300) });
           toast("Сохранено", "success");
+          Sounds.success();
         } catch (e) { toast("Ошибка", "error"); }
       });
       aboutSec.appendChild(ta); aboutSec.appendChild(save);
@@ -2114,7 +2218,6 @@ class NEXORA {
           <div class="profile-hero-name">${escapeHtml(this.activeChat.display_title)}</div>`;
         body.appendChild(hero);
 
-        // Поиск по сообщениям чата
         const searchSec = document.createElement("div");
         searchSec.className = "settings-section";
         searchSec.innerHTML = `<h3>🔍 Поиск по сообщениям</h3>`;
@@ -2177,7 +2280,6 @@ class NEXORA {
           body.appendChild(leaveBtn);
         }
 
-        // Тема чата
         const themeBtn = document.createElement("button");
         themeBtn.className = "btn btn-ghost";
         themeBtn.style.marginTop = "10px";
@@ -2195,6 +2297,7 @@ class NEXORA {
       await this.updateProfile({ username: v });
       this.renderSidebarFooter();
       toast("Username обновлён", "success");
+      Sounds.success();
     } catch (e) { toast(e.message || "Ошибка", "error"); }
   }
 
@@ -2206,6 +2309,7 @@ class NEXORA {
       const { error } = await supabase.auth.updateUser({ password: p });
       if (error) throw error;
       toast("Пароль изменён", "success");
+      Sounds.success();
     } catch (e) { toast(e.message || "Ошибка", "error"); }
   }
 
@@ -2272,10 +2376,12 @@ class NEXORA {
         });
         if (error) throw error;
         toast("2FA включена", "success");
+        Sounds.success();
         backdrop.remove();
       } catch (e) {
         errEl.textContent = e.message || "Неверный код";
         errEl.classList.add("show");
+        Sounds.error();
       }
     });
   }
@@ -2357,6 +2463,7 @@ class NEXORA {
           });
           if (error) throw error;
           toast(chatType === "channel" ? "Канал создан" : "Группа создана", "success");
+          Sounds.success();
           await this.refreshChats();
           this.hidePanel();
           await this.openChatById(data);
@@ -2400,6 +2507,7 @@ class NEXORA {
           if (error) throw error;
           b.textContent = "✓"; b.disabled = true;
           toast("Добавлен", "success");
+          Sounds.success();
         } catch (e) { toast(e.message || "Ошибка", "error"); }
       });
       row.appendChild(b);
@@ -2417,9 +2525,9 @@ class NEXORA {
       $("btn-login").addEventListener("click", () => this.doLogin());
       $("btn-register").addEventListener("click", () => this.doRegister());
       $("btn-mfa").addEventListener("click", () => this.doMfaVerify());
-      $("goto-register").addEventListener("click", () => this.showAuthCard("register"));
-      $("goto-login").addEventListener("click", () => this.showAuthCard("login"));
-      $("mfa-cancel").addEventListener("click", () => this.showAuthCard("login"));
+      $("goto-register").addEventListener("click", () => { Sounds.click(); this.showAuthCard("register"); });
+      $("goto-login").addEventListener("click", () => { Sounds.click(); this.showAuthCard("login"); });
+      $("mfa-cancel").addEventListener("click", () => { Sounds.click(); this.showAuthCard("login"); });
       $("goto-forgot").addEventListener("click", () => {
         alert("Восстановление через email недоступно — аккаунт использует nickname. Обратись к администратору.");
       });
@@ -2431,10 +2539,10 @@ class NEXORA {
 
       $$(".tab").forEach(t => t.addEventListener("click", () => this.setTab(t.dataset.tab)));
 
-      $("btn-settings").addEventListener("click", () => this.openSettings());
+      $("btn-settings").addEventListener("click", () => { Sounds.click(); this.openSettings(); });
       $("btn-logout").addEventListener("click", () => this.logout());
-      $("me-avatar").addEventListener("click", () => this.openProfile());
-      $("me-name").addEventListener("click", () => this.openProfile());
+      $("me-avatar").addEventListener("click", () => { Sounds.click(); this.openProfile(); });
+      $("me-name").addEventListener("click", () => { Sounds.click(); this.openProfile(); });
 
       $("search-input").addEventListener("input", (e) => {
         clearTimeout(this.searchTimeout);
@@ -2443,7 +2551,7 @@ class NEXORA {
         this.searchTimeout = setTimeout(() => this.searchUser(q), 300);
       });
 
-      $("btn-new-chat").addEventListener("click", () => this.openNewChatDialog());
+      $("btn-new-chat").addEventListener("click", () => { Sounds.click(); this.openNewChatDialog(); });
 
       const composer = $("composer");
       composer.addEventListener("input", () => {
@@ -2455,13 +2563,13 @@ class NEXORA {
         if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); this.sendCurrent(); }
       });
       $("btn-send").addEventListener("click", () => this.sendCurrent());
-      $("btn-attach").addEventListener("click", () => this.pickAttachment());
-      $("btn-emoji").addEventListener("click", () => this.openPicker());
+      $("btn-attach").addEventListener("click", () => { Sounds.click(); this.pickAttachment(); });
+      $("btn-emoji").addEventListener("click", () => { Sounds.click(); this.openPicker(); });
       $("attach-cancel").addEventListener("click", () => this.hideAttachBar());
-      $("btn-chat-info").addEventListener("click", () => this.openChatInfo());
-      $("chat-header-body").addEventListener("click", () => this.openChatInfo());
+      $("btn-chat-info").addEventListener("click", () => { Sounds.click(); this.openChatInfo(); });
+      $("chat-header-body").addEventListener("click", () => { Sounds.click(); this.openChatInfo(); });
 
-      $("panel-back").addEventListener("click", () => this.hidePanel());
+      $("panel-back").addEventListener("click", () => { Sounds.click(); this.hidePanel(); });
 
       $("btn-mobile-menu").addEventListener("click", () => {
         $("sidebar").classList.toggle("hidden-mobile");
@@ -2479,14 +2587,17 @@ class NEXORA {
           await this.uploadAvatar(f);
           this.renderSidebarFooter();
           toast("Аватар обновлён", "success");
+          Sounds.success();
         } catch (err) { toast(err.message || "Ошибка", "error"); }
       });
 
+      // Разбудить аудио при первом клике
       document.addEventListener("click", (e) => {
         if (!e.target.closest(".ctx-menu")) this.closeContextMenu();
+        Sounds.unlock();
       });
 
-      // Parallax background
+      // Параллакс
       window.addEventListener("mousemove", (e) => {
         const x = (e.clientX / window.innerWidth - 0.5) * 20;
         const y = (e.clientY / window.innerHeight - 0.5) * 20;
