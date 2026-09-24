@@ -24,16 +24,21 @@
 
 <div class="parallax-bg"></div>
 
-<!-- BOOT -->
+<!-- ============================================================
+     BOOT
+     ============================================================ -->
 <div id="screen-boot" class="screen active">
   <div class="boot-logo">NEXORA</div>
   <div class="boot-tagline">Connect without limits.</div>
   <div class="spinner" style="margin-top:24px"></div>
 </div>
 
-<!-- AUTH -->
+<!-- ============================================================
+     AUTH
+     ============================================================ -->
 <div id="screen-auth" class="screen">
   <div class="auth-wrap">
+
     <div id="auth-login" class="auth-card">
       <div class="auth-logo">NEXORA</div>
       <div class="auth-tagline">Welcome back</div>
@@ -89,10 +94,13 @@
         <button id="mfa-cancel" class="btn btn-ghost">Cancel</button>
       </div>
     </div>
+
   </div>
 </div>
 
-<!-- APP -->
+<!-- ============================================================
+     APP
+     ============================================================ -->
 <div id="screen-app" class="screen">
   <div class="app">
 
@@ -100,6 +108,8 @@
       <div class="sidebar-header">
         <div class="brand">NEXORA</div>
         <div class="header-actions">
+          <button id="btn-search-channel" class="icon-btn" title="Найти канал">🔍</button>
+          <button id="btn-accounts" class="icon-btn" title="Аккаунты">👥</button>
           <button id="btn-new-chat" class="icon-btn" title="Новая группа или канал">＋</button>
           <button id="btn-settings-top" class="icon-btn" title="Настройки">⚙</button>
           <button id="btn-logout-top" class="icon-btn" title="Выйти">⎋</button>
@@ -107,7 +117,7 @@
       </div>
 
       <div class="sidebar-search">
-        <input id="search-input" type="text" placeholder="🔍 Найти по ID или нику" autocomplete="off">
+        <input id="search-input" type="text" placeholder="🔍 Найти по ID, нику или @каналу" autocomplete="off">
       </div>
 
       <nav class="sidebar-tabs">
@@ -132,7 +142,7 @@
       <div id="welcome" class="welcome">
         <div class="welcome-logo">NEXORA</div>
         <div class="welcome-tagline">Connect without limits.</div>
-        <div class="welcome-hint">Найди пользователя по NEXORA ID или нику, или выбери чат слева.</div>
+        <div class="welcome-hint">Найди пользователя по NEXORA ID или нику, найди канал по @username, или выбери чат слева.</div>
       </div>
 
       <div id="chat-view" class="chat-view hidden">
@@ -160,6 +170,7 @@
         <div class="composer">
           <button id="btn-attach" class="icon-btn" title="Прикрепить файл">📎</button>
           <button id="btn-emoji" class="icon-btn" title="Эмодзи и стикеры">😊</button>
+          <button id="btn-poll" class="icon-btn" title="Опрос">📊</button>
           <textarea id="composer" rows="1" maxlength="4000"
                     placeholder="Напиши сообщение…  (Enter — отправить, Shift+Enter — новая строка)"></textarea>
           <button id="btn-send" class="btn btn-primary send-btn">➤</button>
@@ -169,7 +180,9 @@
   </div>
 </div>
 
+<!-- Hidden inputs -->
 <input type="file" id="file-avatar" accept="image/png,image/jpeg,image/webp" style="display:none">
+<input type="file" id="file-cover" accept="image/png,image/jpeg,image/webp" style="display:none">
 <input type="file" id="file-attach" accept="*/*" style="display:none">
 <input type="file" id="file-sticker" accept="image/*" style="display:none">
 
