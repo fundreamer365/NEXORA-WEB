@@ -1,5 +1,5 @@
 /* ============================================================
-   NEXORA v5.1 — единый app.js
+   NEXORA v6.0 — единый app.js
    ============================================================ */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
@@ -15,11 +15,13 @@ const AVATAR_BUCKET = "avatars";
 const ATTACH_BUCKET = "attachments";
 const STICKER_BUCKET = "stickers";
 const AVATAR_MAX = 2 * 1024 * 1024;
+const COVER_MAX = 4 * 1024 * 1024;
 const ATTACH_MAX = 50 * 1024 * 1024;
 const STICKER_MAX = 2 * 1024 * 1024;
 const POLL_MS = 2500;
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "🔥", "😮", "😢"];
 const TYPING_TIMEOUT_MS = 3000;
+const ACCOUNTS_KEY = "nexora-accounts";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: true, autoRefreshToken: true, storageKey: "nexora-auth" },
@@ -60,11 +62,23 @@ function formatDateLabel(iso) {
   if (d.toDateString() === y.toDateString()) return "Вчера";
   return d.toLocaleDateString([], { day: "numeric", month: "long", year: "numeric" });
 }
+function formatDateTime(iso) {
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+  } catch { return ""; }
+}
 function humanSize(n) {
   if (!n) return "0 B";
   const u = ["B", "KB", "MB", "GB"]; let i = 0; let v = n;
   while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
   return `${v >= 10 || i === 0 ? v.toFixed(0) : v.toFixed(1)} ${u[i]}`;
+}
+function randomToken(len = 12) {
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  let s = "";
+  for (let i = 0; i < len; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  return s;
 }
 
 function renderMarkdown(raw) {
@@ -255,11 +269,14 @@ class NEXORA {
     this.members = [];
     this.reactions = {};
     this.reads = {};
+    this.readsByOther = {};
+    this.polls = {};
     this.typingUsers = {};
     this.pendingAttachment = null;
     this.pendingReplyTo = null;
     this.realtimeChannel = null;
     this.typingChannel = null;
+    this.pollsChannel = null;
     this.pollTimer = null;
     this.presenceTimer = null;
     this.typingSelfTimeout = null;
@@ -355,6 +372,141 @@ class NEXORA {
   }
 
   /* ============================================================
+     ACCOUNTS (multi-account)
+     ============================================================ */
+  loadAccounts() {
+    try { return JSON.parse(localStorage.getItem(ACCOUNTS_KEY) || "[]"); }
+    catch { return []; }
+  }
+  saveAccounts(list) {
+    localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(list));
+  }
+  rememberAccount({ id, username, nexora_id, avatar_url }) {
+    const list = this.loadAccounts().filter(a => a.id !== id);
+    list.unshift({ id, username, nexora_id, avatar_url, added_at: Date.now() });
+    this.saveAccounts(list.slice(0, 8));
+  }
+  forgetAccount(id) {
+    const list = this.loadAccounts().filter(a => a.id !== id);
+    this.saveAccounts(list);
+  }
+
+  openAccountsSwitcher() {
+    const accounts = this.loadAccounts();
+    this.openModal({
+      title: "Аккаунты",
+      narrow: true,
+      body: (body) => {
+        body.innerHTML = "";
+        if (!accounts.length) {
+          const p = document.createElement("p");
+          p.className = "muted";
+          p.textContent = "Нет сохранённых аккаунтов";
+          body.appendChild(p);
+        }
+
+        accounts.forEach(a => {
+          const row = document.createElement("div");
+          row.className = "account-row" + (a.id === this.user?.id ? " current" : "");
+          row.innerHTML = `
+            ${avatarHTML(a, "md")}
+            <div class="account-info">
+              <div class="account-name">${escapeHtml(a.username)}</div>
+              <div class="account-id">${escapeHtml(a.nexora_id || "")}</div>
+            </div>
+            ${a.id === this.user?.id ? '<span class="account-badge">Активен</span>' : ""}`;
+
+          if (a.id !== this.user?.id) {
+            row.addEventListener("click", async () => {
+              this.closeModal();
+              await this.switchAccount(a.id);
+            });
+
+            const rm = document.createElement("button");
+            rm.className = "btn btn-ghost";
+            rm.style.marginLeft = "6px";
+            rm.textContent = "✕";
+            rm.title = "Убрать из списка";
+            rm.addEventListener("click", (e) => {
+              e.stopPropagation();
+              this.forgetAccount(a.id);
+              this.openAccountsSwitcher();
+            });
+            row.appendChild(rm);
+          }
+
+          body.appendChild(row);
+        });
+
+        // Кнопка «Добавить аккаунт» — выход и логин под другим
+        const add = document.createElement("button");
+        add.className = "btn btn-primary btn-block";
+        add.style.marginTop = "14px";
+        add.textContent = "＋ Войти в другой аккаунт";
+        add.addEventListener("click", async () => {
+          if (this.user && this.profile) {
+            this.rememberAccount({
+              id: this.user.id,
+              username: this.profile.username,
+              nexora_id: this.profile.nexora_id,
+              avatar_url: this.profile.avatar_url,
+            });
+          }
+          this.closeModal();
+          await this.logout(true);
+        });
+        body.appendChild(add);
+
+        // «Выйти из всех аккаунтов»
+        if (accounts.length > 1) {
+          const clear = document.createElement("button");
+          clear.className = "btn btn-danger btn-block";
+          clear.style.marginTop = "8px";
+          clear.textContent = "Забыть все аккаунты";
+          clear.addEventListener("click", () => {
+            if (!confirm("Убрать все аккаунты из списка?")) return;
+            this.saveAccounts([]);
+            this.openAccountsSwitcher();
+          });
+          body.appendChild(clear);
+        }
+      },
+    });
+  }
+
+  async switchAccount(accountId) {
+    if (!confirm("Переключиться на этот аккаунт? Текущий сеанс завершится.")) return;
+    try {
+      // Запоминаем текущий
+      if (this.user && this.profile) {
+        this.rememberAccount({
+          id: this.user.id,
+          username: this.profile.username,
+          nexora_id: this.profile.nexora_id,
+          avatar_url: this.profile.avatar_url,
+        });
+      }
+      // Выход
+      try { await this.setOnline(false); } catch (_) {}
+      await supabase.auth.signOut();
+      this.stopRealtime();
+      this.stopPresence();
+      this.user = null; this.profile = null;
+      this.activeChat = null; this.messages = [];
+      this.chats = []; this.contacts = [];
+      this.showScreen("screen-auth");
+      this.showAuthCard("login");
+      // Подставляем username прошлого аккаунта, чтобы было удобнее
+      const acc = this.loadAccounts().find(a => a.id === accountId);
+      if (acc) {
+        $("login-username").value = acc.username;
+        $("login-password").focus();
+        toast(`Введи пароль для @${acc.username}`, "info");
+      }
+    } catch (e) { toast("Не удалось переключиться", "error"); }
+  }
+
+  /* ============================================================
      BOOT
      ============================================================ */
   async boot() {
@@ -365,7 +517,15 @@ class NEXORA {
       if (session) {
         this.user = session.user;
         await this.loadProfile();
-        if (this.profile) return this.enterApp();
+        if (this.profile) {
+          this.rememberAccount({
+            id: this.user.id,
+            username: this.profile.username,
+            nexora_id: this.profile.nexora_id,
+            avatar_url: this.profile.avatar_url,
+          });
+          return this.enterApp();
+        }
       }
     } catch (e) { console.error(e); }
     this.showScreen("screen-auth");
@@ -489,6 +649,14 @@ class NEXORA {
       } catch (_) {}
 
       await this.loadProfile();
+      if (this.profile) {
+        this.rememberAccount({
+          id: this.user.id,
+          username: this.profile.username,
+          nexora_id: this.profile.nexora_id,
+          avatar_url: this.profile.avatar_url,
+        });
+      }
       toast("Добро пожаловать!", "success");
       Sounds.success();
       this.enterApp();
@@ -519,6 +687,14 @@ class NEXORA {
       });
       if (error) throw error;
       await this.loadProfile();
+      if (this.profile) {
+        this.rememberAccount({
+          id: this.user.id,
+          username: this.profile.username,
+          nexora_id: this.profile.nexora_id,
+          avatar_url: this.profile.avatar_url,
+        });
+      }
       toast("Проверено", "success");
       Sounds.success();
       this.enterApp();
@@ -529,9 +705,17 @@ class NEXORA {
     }
   }
 
-  async logout() {
-    if (!confirm("Выйти из NEXORA?")) return;
+  async logout(silent = false) {
+    if (!silent && !confirm("Выйти из NEXORA?")) return;
     try { await this.setOnline(false); } catch (_) {}
+    if (this.user && this.profile && !silent) {
+      this.rememberAccount({
+        id: this.user.id,
+        username: this.profile.username,
+        nexora_id: this.profile.nexora_id,
+        avatar_url: this.profile.avatar_url,
+      });
+    }
     await supabase.auth.signOut();
     this.stopRealtime();
     this.stopPresence();
@@ -595,6 +779,7 @@ class NEXORA {
     await this.refreshChats();
     await this.refreshContacts();
     await this.loadReads();
+    await this.loadReadsByOther();
     await this.loadChatThemes();
     this.subscribeProfiles();
     this.subscribeGlobalMessages();
@@ -603,6 +788,9 @@ class NEXORA {
     $("chat-view").classList.add("hidden");
     $("welcome").classList.remove("hidden");
     this.updatePageTitle();
+
+    // Deep link: ?c=@channel или ?u=NXR-XXXXXX
+    this.handleDeepLink();
   }
 
   renderSidebarFooter() {
@@ -613,7 +801,7 @@ class NEXORA {
   }
 
   /* ============================================================
-     UNREAD
+     UNREAD + READ-RECEIPTS
      ============================================================ */
   async loadReads() {
     try {
@@ -624,12 +812,51 @@ class NEXORA {
       this.reads = map;
     } catch (e) { this.reads = {}; }
   }
+  async loadReadsByOther() {
+    // Для каждого чата берём последнее прочтение собеседников
+    try {
+      const { data: mem } = await supabase.from("chat_members")
+        .select("chat_id").eq("user_id", this.user.id);
+      const ids = (mem || []).map(m => m.chat_id);
+      if (!ids.length) { this.readsByOther = {}; return; }
+      const { data } = await supabase.from("chat_reads")
+        .select("chat_id, user_id, last_read_at")
+        .in("chat_id", ids)
+        .neq("user_id", this.user.id);
+      const map = {};
+      (data || []).forEach(r => {
+        if (!map[r.chat_id]) map[r.chat_id] = {};
+        if (!map[r.chat_id][r.user_id] || new Date(r.last_read_at) > new Date(map[r.chat_id][r.user_id])) {
+          map[r.chat_id][r.user_id] = r.last_read_at;
+        }
+      });
+      this.readsByOther = map;
+    } catch (_) { this.readsByOther = {}; }
+  }
+  isMessageRead(m) {
+    if (!this.activeChat) return false;
+    if (this.activeChat.type === "saved") return false;
+    if (this.activeChat.type === "direct") {
+      const peer = this.activeChat.peer;
+      if (!peer) return false;
+      const peerRead = this.readsByOther?.[this.activeChat.id]?.[peer.id];
+      if (!peerRead) return false;
+      return new Date(peerRead) >= new Date(m.created_at);
+    }
+    // группы/каналы — считаем «прочитано», если прочитал хотя бы один
+    const map = this.readsByOther?.[this.activeChat.id] || {};
+    const times = Object.values(map);
+    if (!times.length) return false;
+    const latest = times.reduce((a, b) => new Date(a) > new Date(b) ? a : b);
+    return new Date(latest) >= new Date(m.created_at);
+  }
   async markChatRead(chatId) {
     const iso = new Date().toISOString();
     this.reads[chatId] = iso;
     try {
       await supabase.from("chat_reads").upsert({
         user_id: this.user.id, chat_id: chatId, last_read_at: iso,
+        updated_at: iso,
       });
     } catch (_) {}
     this.updatePageTitle();
@@ -639,6 +866,7 @@ class NEXORA {
     const last = chat.last_message;
     if (!last) return 0;
     if (chat.type === "saved") return 0;
+    if (chat.type === "system") return 0;
     if (!lastRead) return last.is_own ? 0 : 1;
     if (last.is_own) return 0;
     return new Date(last.created_at) > new Date(lastRead) ? 1 : 0;
@@ -672,7 +900,7 @@ class NEXORA {
 
   renderChatsList(container) {
     if (!this.chats.length) {
-      container.innerHTML = `<div class="empty-state">Пока нет чатов.<br>Найди пользователя по NEXORA ID или нику, или нажми ＋.</div>`;
+      container.innerHTML = `<div class="empty-state">Пока нет чатов.<br>Найди пользователя по NEXORA ID, ник или @канал, или нажми ＋.</div>`;
       return;
     }
     this.chats.forEach(chat => {
@@ -690,7 +918,10 @@ class NEXORA {
 
       let sub = chat.type === "saved" ? "Твои сохранённые сообщения" : "Нет сообщений";
       if (last) {
-        const icon = { image: "🖼️ ", video: "🎬 ", file: "📎 ", sticker: "🎨 ", voice: "🎤 ", gif: "🎞️ " }[last.kind] || "";
+        const icon = {
+          image: "🖼️ ", video: "🎬 ", file: "📎 ",
+          sticker: "🎨 ", voice: "🎤 ", gif: "🎞️ ", poll: "📊 ",
+        }[last.kind] || "";
         sub = (last.is_own ? "Ты: " : "") + icon + (last.content || "").slice(0, 60);
       }
       const typing = this.typingUsers[chat.id];
@@ -705,11 +936,16 @@ class NEXORA {
       const botBadge = peer.is_bot ? ' <span class="bot-badge">[BOT]</span>' : "";
       const avatarUser = chat.type === "saved" ? { username: "★" } : peer;
 
+      let chanTag = "";
+      if (chat.type === "channel" && chat.username) {
+        chanTag = `<span class="channel-badge ${chat.is_public ? "public" : "private"}">${chat.is_public ? "public" : "private"}</span>`;
+      }
+
       div.innerHTML = `
         ${avatarHTML(avatarUser, "md")}
         <div class="list-item-body">
           <div class="list-item-title">
-            <span>${escapeHtml(badge + title)}${botBadge}</span>
+            <span>${escapeHtml(badge + title)}${botBadge}${chanTag}</span>
             <span class="time">${last ? formatTime(last.created_at) : ""}</span>
           </div>
           <div class="list-item-sub">${typers.length ? sub : escapeHtml(sub)}</div>
@@ -744,6 +980,10 @@ class NEXORA {
       mk("✓ Отметить прочитанным", () => this.markChatRead(chat.id));
       if (chat.type === "direct" && chat.peer) {
         mk("👤 Открыть профиль", () => this.openUserProfile(chat.peer.id, chat.peer));
+      }
+      if (chat.type === "channel" && (chat.my_role === "owner" || chat.my_role === "admin")) {
+        mk("⚙ Настройки канала", () => this.openChannelSettings(chat));
+        mk("🔗 Поделиться ссылкой", () => this.openChannelShare(chat));
       }
       mk("🎨 Тема чата", () => this.openChatThemeDialog(chat));
       mk("🗑 Удалить для себя", () => this.hideChatForMe(chat), true);
@@ -892,11 +1132,15 @@ class NEXORA {
   }
 
   /* ============================================================
-     SEARCH
+     SEARCH (users + channels)
      ============================================================ */
   async searchUser(query) {
     const q = (query || "").trim();
     if (!q) return;
+
+    // Если начинается с @ — ищем канал
+    if (q.startsWith("@")) return this.searchChannel(q.slice(1));
+
     const list = $("sidebar-list");
     list.innerHTML = `<div class="empty-state"><span class="spinner"></span></div>`;
     try {
@@ -904,7 +1148,10 @@ class NEXORA {
       if (error) throw error;
       list.innerHTML = "";
       if (!data || !data.length) {
-        list.innerHTML = `<div class="empty-state">Никого не нашёл: ${escapeHtml(q)}<br><small>Можно искать по NEXORA ID (NXR-XXXXXX) или нику</small></div>`;
+        // Может, это канал?
+        const ch = await this.tryFindChannel(q);
+        if (ch) return this.renderChannelResult(ch, list);
+        list.innerHTML = `<div class="empty-state">Никого не нашёл: ${escapeHtml(q)}<br><small>ID, ник или @канал</small></div>`;
         return;
       }
       data.forEach(u => {
@@ -929,6 +1176,64 @@ class NEXORA {
       console.error(e);
       list.innerHTML = `<div class="empty-state">Ошибка поиска: ${escapeHtml(e.message || "")}</div>`;
     }
+  }
+
+  async tryFindChannel(q) {
+    try {
+      const { data, error } = await supabase.rpc("find_channel", { query: q });
+      if (error) return null;
+      const ch = Array.isArray(data) ? data[0] : data;
+      return ch || null;
+    } catch (_) { return null; }
+  }
+
+  async searchChannel(name) {
+    const list = $("sidebar-list");
+    list.innerHTML = `<div class="empty-state"><span class="spinner"></span></div>`;
+    const ch = await this.tryFindChannel(name);
+    list.innerHTML = "";
+    if (!ch) {
+      list.innerHTML = `<div class="empty-state">Канал не найден: @${escapeHtml(name)}</div>`;
+      return;
+    }
+    this.renderChannelResult(ch, list);
+  }
+
+  renderChannelResult(ch, container) {
+    const card = document.createElement("div");
+    card.className = "user-card";
+    const pubTag = ch.is_public ? "public" : "private";
+    const unameLine = ch.username ? `@${escapeHtml(ch.username)}` : "(приватный)";
+    card.innerHTML = `
+      <div class="avatar avatar-md">📢</div>
+      <div class="user-card-body">
+        <div class="user-card-name">
+          ${escapeHtml(ch.title)}
+          <span class="channel-badge ${pubTag}">${pubTag}</span>
+        </div>
+        <div class="user-card-id">${unameLine} · ${ch.members_count} участников</div>
+      </div>
+      <button class="btn btn-primary">${ch.already_member ? "Открыть" : "Войти"}</button>`;
+    card.querySelector("button").addEventListener("click", async () => {
+      if (ch.already_member) {
+        await this.refreshChats();
+        await this.openChatById(ch.id);
+      } else {
+        if (!ch.is_public) {
+          toast("Приватный канал — нужна ссылка-приглашение", "warning");
+          return;
+        }
+        try {
+          const { error } = await supabase.rpc("join_channel", { p_chat_id: ch.id });
+          if (error) throw error;
+          toast("Присоединились", "success");
+          Sounds.success();
+          await this.refreshChats();
+          await this.openChatById(ch.id);
+        } catch (e) { toast(e.message || "Ошибка", "error"); }
+      }
+    });
+    container.appendChild(card);
   }
 
   /* ============================================================
@@ -991,7 +1296,7 @@ class NEXORA {
       }
 
       const [{ data: chats }, { data: members }, { data: msgs }, { data: nicks }] = await Promise.all([
-        supabase.from("chats").select("id, is_group, title, type, description, avatar_url, updated_at, owner_id").in("id", ids),
+        supabase.from("chats").select("id, is_group, title, type, description, avatar_url, updated_at, owner_id, username, is_public, invite_token").in("id", ids),
         supabase.from("chat_members").select("chat_id, user_id, role, profile:profiles!chat_members_user_id_fkey(id, username, nexora_id, avatar_url, is_online, show_online, is_bot)").in("chat_id", ids),
         supabase.from("messages").select("chat_id, content, kind, created_at, sender_id, pinned").in("chat_id", ids).order("created_at", { ascending: false }).limit(300),
         supabase.from("contact_nicknames").select("contact_id, nickname").eq("owner_id", this.user.id),
@@ -1020,6 +1325,7 @@ class NEXORA {
           id: c.id, is_group: c.is_group, type: ctype,
           title: c.title, description: c.description,
           avatar_url: c.avatar_url, owner_id: c.owner_id,
+          username: c.username, is_public: c.is_public, invite_token: c.invite_token,
           updated_at: c.updated_at, my_role: myMem?.role || "member",
           peer, display_title: display,
           members_count: mems.length,
@@ -1113,11 +1419,18 @@ class NEXORA {
     if (ctype === "saved") title = "Избранное";
     else title = chat.peer?.nickname || chat.display_title;
 
-    $("chat-peer-name").innerHTML = `${escapeHtml(badge + title)}${botTag}
+    let chanTag = "";
+    if (ctype === "channel" && chat.username) {
+      chanTag = `<span class="channel-badge ${chat.is_public ? "public" : "private"}">@${escapeHtml(chat.username)}</span>`;
+    }
+
+    $("chat-peer-name").innerHTML = `${escapeHtml(badge + title)}${botTag}${chanTag}
       <span class="online-dot${this.isPeerOnline(chat) ? " online" : ""}"></span>`;
 
     if (ctype === "saved") {
       $("chat-peer-sub").textContent = "Твои сохранённые сообщения";
+    } else if (ctype === "channel") {
+      $("chat-peer-sub").textContent = `${chat.is_public ? "публичный" : "приватный"} канал · ${chat.members_count || 0} подписчиков`;
     } else {
       $("chat-peer-sub").textContent = chat.peer?.nexora_id ||
         (chat.members_count ? `${chat.members_count} участников` : "");
@@ -1132,6 +1445,7 @@ class NEXORA {
     $("btn-send").disabled = blocked;
     $("btn-attach").disabled = blocked;
     $("btn-emoji").disabled = blocked;
+    $("btn-poll").disabled = blocked;
     $("composer").placeholder = blocked ? "Писать могут только админы" : "Напиши сообщение…";
 
     if (window.innerWidth <= 768) $("sidebar").classList.add("hidden-mobile");
@@ -1143,6 +1457,7 @@ class NEXORA {
     await this.loadMembers();
     await this.loadMessages();
     await this.loadReactions();
+    await this.loadPolls();
 
     this._activeBotCommands = [];
     if (chat.peer?.is_bot) {
@@ -1160,6 +1475,7 @@ class NEXORA {
     await this.checkStrangerBanner();
     this.subscribeChat(chat.id);
     this.subscribeTyping(chat.id);
+    this.subscribePolls(chat.id);
     this.startPolling(chat.id);
     this.markChatRead(chat.id);
     this.hideReplyPreview();
@@ -1199,6 +1515,37 @@ class NEXORA {
       });
       this.reactions = map;
     } catch (e) { console.error(e); this.reactions = {}; }
+  }
+
+  async loadPolls() {
+    try {
+      const { data, error } = await supabase
+        .from("polls")
+        .select("id, chat_id, message_id, author_id, question, options, is_quiz, correct_index, is_anonymous, allows_multiple, closed")
+        .eq("chat_id", this.activeChat.id);
+      if (error) throw error;
+      const map = {};
+      (data || []).forEach(p => {
+        if (p.message_id) map[p.message_id] = { ...p, votes: {} };
+      });
+
+      // Подтянем голоса
+      const pollIds = (data || []).map(p => p.id);
+      if (pollIds.length) {
+        const { data: votes } = await supabase
+          .from("poll_votes")
+          .select("poll_id, user_id, option_indices")
+          .in("poll_id", pollIds);
+        (votes || []).forEach(v => {
+          const poll = Object.values(map).find(p => p.id === v.poll_id);
+          if (poll) poll.votes[v.user_id] = v.option_indices || [];
+        });
+      }
+      this.polls = map;
+    } catch (e) {
+      console.error("loadPolls:", e);
+      this.polls = {};
+    }
   }
 
   async checkStrangerBanner() {
@@ -1339,6 +1686,18 @@ class NEXORA {
     const senderName = isOwn ? "Ты" : (sender?.username || this.activePeer?.username || "User");
     const isBot = !!sender?.is_bot;
 
+    // Системные сообщения
+    if (m.kind === "system") {
+      const row = document.createElement("div");
+      row.className = "msg-row system";
+      row.dataset.messageId = m.id;
+      const bubble = document.createElement("div");
+      bubble.className = "msg-bubble";
+      bubble.textContent = m.content || "";
+      row.appendChild(bubble);
+      return row;
+    }
+
     const row = document.createElement("div");
     row.className = "msg-row" + (isOwn ? " own" : "");
     row.dataset.messageId = m.id;
@@ -1374,8 +1733,14 @@ class NEXORA {
 
     const content = document.createElement("div");
     content.className = "msg-content";
-    this.renderMessageContent(content, m);
-    bubble.appendChild(content);
+
+    // Опрос?
+    if (m.kind === "poll" && this.polls && this.polls[m.id]) {
+      this.renderPoll(bubble, this.polls[m.id], m);
+    } else {
+      this.renderMessageContent(content, m);
+      bubble.appendChild(content);
+    }
 
     const rx = this.reactions[m.id] || {};
     const rxKeys = Object.keys(rx);
@@ -1394,8 +1759,15 @@ class NEXORA {
 
     const meta = document.createElement("div");
     meta.className = "msg-meta";
+    let statusHTML = "";
+    if (isOwn) {
+      const isRead = this.isMessageRead(m);
+      statusHTML = `<span class="msg-status${isRead ? " read" : ""}">
+        <span class="check">${isRead ? "✓✓" : "✓"}</span>
+      </span>`;
+    }
     meta.innerHTML = `${m.edited_at ? '<span class="msg-edited">(изменено)</span>' : ""}
-      <span>${escapeHtml(formatTime(m.created_at))}</span>`;
+      <span>${escapeHtml(formatTime(m.created_at))}</span>${statusHTML}`;
     bubble.appendChild(meta);
 
     row.appendChild(bubble);
@@ -1419,23 +1791,212 @@ class NEXORA {
     return row;
   }
 
-  openReactionBar(event, msg) {
-    this.closeContextMenu();
-    const bar = document.createElement("div");
-    bar.className = "reaction-bar"; bar.id = "ctx-menu";
-    QUICK_REACTIONS.forEach(e => {
-      const b = document.createElement("button");
-      b.textContent = e;
-      b.addEventListener("click", () => { this.closeContextMenu(); this.toggleReaction(msg.id, e); });
-      bar.appendChild(b);
+  /* ============================================================
+     POLL RENDER
+     ============================================================ */
+  renderPoll(bubble, poll, msg) {
+    const card = document.createElement("div");
+    card.className = "poll-card";
+
+    const q = document.createElement("div");
+    q.className = "poll-question";
+    q.innerHTML = escapeHtml(poll.question) + (poll.is_quiz ? ' <span class="channel-badge public">Викторина</span>' : "");
+    card.appendChild(q);
+
+    const options = Array.isArray(poll.options) ? poll.options : [];
+    const myVote = poll.votes[this.user.id] || [];
+    const totalVotes = Object.keys(poll.votes).length;
+
+    // Считаем распределение
+    const counts = options.map(() => 0);
+    Object.values(poll.votes).forEach(voteArr => {
+      (voteArr || []).forEach(i => { if (counts[i] != null) counts[i] += 1; });
     });
-    document.body.appendChild(bar);
-    const r = event.target.getBoundingClientRect();
-    bar.style.left = Math.min(r.left, window.innerWidth - 260) + "px";
-    bar.style.top = Math.max(10, r.top - 50) + "px";
-    setTimeout(() => document.addEventListener("click", this.closeContextMenu, { once: true }), 0);
+
+    options.forEach((opt, idx) => {
+      const optEl = document.createElement("div");
+      optEl.className = "poll-option";
+      const isVoted = myVote.includes(idx);
+      if (isVoted) optEl.classList.add("voted");
+      if (poll.is_quiz && poll.correct_index === idx) optEl.classList.add("correct");
+      if (poll.is_quiz && isVoted && poll.correct_index !== idx) optEl.classList.add("incorrect");
+
+      const pct = totalVotes > 0 ? Math.round((counts[idx] / totalVotes) * 100) : 0;
+
+      optEl.innerHTML = `
+        <div class="poll-option-bar" style="width:${pct}%"></div>
+        <div class="poll-option-text">
+          <span><span class="poll-checkbox"></span>${escapeHtml(opt)}</span>
+          <span class="poll-option-pct">${pct}%</span>
+        </div>`;
+      optEl.addEventListener("click", async () => {
+        if (poll.closed) return toast("Опрос закрыт", "warning");
+        const isMultiple = poll.allows_multiple;
+
+        let newVote;
+        if (isMultiple) {
+          newVote = new Set(myVote);
+          if (newVote.has(idx)) newVote.delete(idx);
+          else newVote.add(idx);
+          newVote = [...newVote];
+          if (!newVote.length) return;
+        } else {
+          newVote = [idx];
+        }
+
+        try {
+          const { error } = await supabase.rpc("vote_poll", {
+            p_poll_id: poll.id,
+            p_options: newVote,
+          });
+          if (error) throw error;
+          poll.votes[this.user.id] = newVote;
+          this.paintMessageWindow();
+          Sounds.click();
+        } catch (e) { toast(e.message || "Ошибка", "error"); }
+      });
+      card.appendChild(optEl);
+    });
+
+    const meta = document.createElement("div");
+    meta.className = "poll-meta";
+    const votesWord = totalVotes === 1 ? "голос" : (totalVotes < 5 ? "голоса" : "голосов");
+    meta.textContent = `${totalVotes} ${votesWord}` +
+      (poll.is_anonymous ? " · анонимный" : "") +
+      (poll.allows_multiple ? " · несколько вариантов" : "") +
+      (poll.closed ? " · закрыт" : "");
+    card.appendChild(meta);
+
+    bubble.appendChild(card);
   }
 
+  /* ============================================================
+     Создание опроса
+     ============================================================ */
+  openPollCreator() {
+    if (!this.activeChat) return;
+    if (this.activeChat.type === "channel" && !["owner","admin"].includes(this.activeChat.my_role)) {
+      return toast("Только админы могут создавать опросы", "warning");
+    }
+
+    this.openModal({
+      title: "Новый опрос",
+      body: (body) => {
+        body.innerHTML = `
+          <div class="form-group">
+            <label>Вопрос</label>
+            <input id="poll-q" maxlength="200" placeholder="О чём спросить?">
+          </div>
+          <div class="form-group">
+            <label>Варианты (2–10)</label>
+            <div id="poll-opts" style="display:flex;flex-direction:column;gap:8px"></div>
+            <button class="btn btn-ghost" id="poll-add" style="margin-top:8px">＋ Добавить вариант</button>
+          </div>
+          <div class="settings-section" style="background:var(--bg-2)">
+            <label style="display:flex;gap:10px;align-items:center;cursor:pointer;padding:6px 0">
+              <input type="checkbox" id="poll-quiz" style="width:auto">
+              <span>Викторина (правильный ответ)</span>
+            </label>
+            <label style="display:flex;gap:10px;align-items:center;cursor:pointer;padding:6px 0">
+              <input type="checkbox" id="poll-anon" style="width:auto" checked>
+              <span>Анонимный опрос</span>
+            </label>
+            <label style="display:flex;gap:10px;align-items:center;cursor:pointer;padding:6px 0">
+              <input type="checkbox" id="poll-multi" style="width:auto">
+              <span>Можно выбрать несколько</span>
+            </label>
+          </div>
+          <div id="poll-err" class="form-error"></div>`;
+
+        const optsHolder = body.querySelector("#poll-opts");
+        const addOpt = (value = "") => {
+          if (optsHolder.children.length >= 10) return;
+          const row = document.createElement("div");
+          row.style.display = "flex"; row.style.gap = "6px";
+          const inp = document.createElement("input");
+          inp.placeholder = "Вариант " + (optsHolder.children.length + 1);
+          inp.maxLength = 80;
+          inp.value = value;
+          const rm = document.createElement("button");
+          rm.className = "btn btn-ghost"; rm.textContent = "✕";
+          rm.style.padding = "0 12px";
+          rm.addEventListener("click", () => {
+            if (optsHolder.children.length <= 2) return toast("Минимум 2 варианта", "warning");
+            row.remove();
+          });
+          row.appendChild(inp); row.appendChild(rm);
+          optsHolder.appendChild(row);
+        };
+        addOpt();
+        addOpt();
+
+        body.querySelector("#poll-add").addEventListener("click", () => addOpt());
+
+        const f = this._openModal.footerEl;
+        f.innerHTML = "";
+        const cancel = document.createElement("button");
+        cancel.className = "btn btn-ghost"; cancel.textContent = "Отмена";
+        cancel.addEventListener("click", () => this.closeModal());
+        const create = document.createElement("button");
+        create.className = "btn btn-primary"; create.textContent = "Создать";
+        create.addEventListener("click", async () => {
+          const errEl = body.querySelector("#poll-err");
+          errEl.classList.remove("show");
+          const question = body.querySelector("#poll-q").value.trim();
+          if (!question) {
+            errEl.textContent = "Введи вопрос"; errEl.classList.add("show"); return;
+          }
+          const opts = [...optsHolder.querySelectorAll("input")].map(i => i.value.trim()).filter(Boolean);
+          if (opts.length < 2) {
+            errEl.textContent = "Нужно минимум 2 варианта"; errEl.classList.add("show"); return;
+          }
+          const isQuiz = body.querySelector("#poll-quiz").checked;
+          const isAnon = body.querySelector("#poll-anon").checked;
+          const isMulti = body.querySelector("#poll-multi").checked;
+
+          let correctIdx = null;
+          if (isQuiz) {
+            const v = prompt("Номер правильного варианта (1.." + opts.length + "):");
+            const n = parseInt(v || "0", 10);
+            if (!n || n < 1 || n > opts.length) {
+              errEl.textContent = "Некорректный номер правильного варианта";
+              errEl.classList.add("show");
+              return;
+            }
+            correctIdx = n - 1;
+          }
+
+          try {
+            const { data, error } = await supabase.rpc("create_poll", {
+              p_chat_id: this.activeChat.id,
+              p_question: question,
+              p_options: opts,
+              p_is_quiz: isQuiz,
+              p_correct_index: correctIdx,
+              p_is_anonymous: isAnon,
+              p_allows_multiple: isMulti && !isQuiz,
+            });
+            if (error) throw error;
+            toast("Опрос создан", "success");
+            Sounds.success();
+            this.closeModal();
+            // Добавим в локальный список сообщений (realtime тоже придёт)
+            await this.loadMessages();
+            await this.loadPolls();
+            this.paintMessageWindow();
+          } catch (e) {
+            errEl.textContent = e.message || "Ошибка";
+            errEl.classList.add("show");
+          }
+        });
+        f.appendChild(cancel); f.appendChild(create);
+      },
+    });
+  }
+
+  /* ============================================================
+     MESSAGE CONTENT
+     ============================================================ */
   renderMessageContent(el, m) {
     el.innerHTML = "";
     const kind = m.kind || "text";
@@ -2170,6 +2731,24 @@ class NEXORA {
     }).subscribe();
   }
 
+  subscribePolls(chatId) {
+    if (this.pollsChannel) { supabase.removeChannel(this.pollsChannel); this.pollsChannel = null; }
+    this.pollsChannel = supabase.channel("polls:" + chatId)
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "poll_votes" },
+        () => this.reloadPollsSafe())
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "polls", filter: `chat_id=eq.${chatId}` },
+        () => this.reloadPollsSafe())
+      .subscribe();
+  }
+
+  async reloadPollsSafe() {
+    if (!this.activeChat) return;
+    await this.loadPolls();
+    this.paintMessageWindow();
+  }
+
   broadcastTyping() {
     if (!this.typingChannel || !this.activeChat) return;
     if (this.typingSelfTimeout) return;
@@ -2190,7 +2769,13 @@ class NEXORA {
       sub.classList.add("typing");
     } else {
       const peer = chat.peer;
-      sub.textContent = peer?.nexora_id || (chat.members_count ? `${chat.members_count} участников` : "");
+      if (chat.type === "channel") {
+        sub.textContent = `${chat.is_public ? "публичный" : "приватный"} канал · ${chat.members_count || 0} подписчиков`;
+      } else if (chat.type === "saved") {
+        sub.textContent = "Твои сохранённые сообщения";
+      } else {
+        sub.textContent = peer?.nexora_id || (chat.members_count ? `${chat.members_count} участников` : "");
+      }
       sub.classList.remove("typing");
     }
   }
@@ -2219,12 +2804,17 @@ class NEXORA {
           this.notify(title, m.content || "Новое сообщение");
           Sounds.message();
         })
+      .on("postgres_changes",
+        { event: "*", schema: "public", table: "chat_reads" },
+        () => this.loadReadsByOther()
+      )
       .subscribe();
   }
 
   stopRealtime() {
     if (this.realtimeChannel) { supabase.removeChannel(this.realtimeChannel); this.realtimeChannel = null; }
     if (this.typingChannel) { supabase.removeChannel(this.typingChannel); this.typingChannel = null; }
+    if (this.pollsChannel) { supabase.removeChannel(this.pollsChannel); this.pollsChannel = null; }
   }
 
   onRealtimeInsert(m) {
@@ -2236,6 +2826,8 @@ class NEXORA {
     this.markChatRead(this.activeChat.id);
     this.refreshChats();
     Sounds.message();
+    // Если это опрос — догрузим
+    if (m.kind === "poll") this.reloadPollsSafe();
   }
 
   onRealtimeUpdate(m) {
@@ -2288,7 +2880,216 @@ class NEXORA {
   stopPolling() { if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = null; } }
 
   /* ============================================================
-     SETTINGS (модалка)
+     CHANNEL SETTINGS + SHARE
+     ============================================================ */
+  openChannelSettings(chat) {
+    this.openModal({
+      title: "Настройки канала",
+      body: (body) => {
+        const isPublic = !!chat.is_public;
+        body.innerHTML = `
+          <div class="settings-section">
+            <h3>Название</h3>
+            <input id="cs-title" maxlength="80" value="${escapeHtml(chat.title || "")}">
+            <textarea id="cs-desc" rows="2" maxlength="200" placeholder="Описание (необязательно)" style="margin-top:8px">${escapeHtml(chat.description || "")}</textarea>
+          </div>
+          <div class="settings-section">
+            <h3>Тип канала</h3>
+            <div id="cs-type" style="display:flex;gap:8px"></div>
+            <div id="cs-username-wrap" style="margin-top:12px; display:${isPublic ? "block" : "none"}">
+              <label style="font-size:11px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:1px">Username</label>
+              <div class="input-prefix" style="margin-top:6px">
+                <span class="prefix">@</span>
+                <input id="cs-username" maxlength="32" value="${escapeHtml(chat.username || "")}" placeholder="my_channel">
+              </div>
+              <small style="display:block;margin-top:6px;color:var(--text-3);font-size:11px">5–32 символа, латиница, цифры, _. Пользователи смогут найти канал по @username.</small>
+            </div>
+          </div>
+          <div class="settings-section">
+            <h3>Ссылка-приглашение</h3>
+            <div id="cs-invite-info" style="color:var(--text-2);font-size:13px"></div>
+            <div class="share-row" id="cs-share-row" style="display:none">
+              <span class="share-link" id="cs-share-link"></span>
+              <button class="btn btn-ghost" id="cs-copy">Копировать</button>
+            </div>
+          </div>
+          <div id="cs-error" class="form-error"></div>`;
+
+        // Тип канала
+        let picked = isPublic;
+        const typeBox = body.querySelector("#cs-type");
+        const unameWrap = body.querySelector("#cs-username-wrap");
+        const setType = (pub) => {
+          picked = pub;
+          typeBox.querySelectorAll("button").forEach(b => b.className = "btn btn-ghost");
+          (pub ? typeBox.children[0] : typeBox.children[1]).className = "btn btn-primary";
+          unameWrap.style.display = pub ? "block" : "none";
+          refreshInvite();
+        };
+        ["Публичный", "Приватный"].forEach((label, i) => {
+          const b = document.createElement("button");
+          b.className = "btn " + ((isPublic && i === 0) || (!isPublic && i === 1) ? "btn-primary" : "btn-ghost");
+          b.textContent = label;
+          b.addEventListener("click", () => setType(i === 0));
+          typeBox.appendChild(b);
+        });
+
+        // Ссылка-приглашение
+        const inviteInfo = body.querySelector("#cs-invite-info");
+        const shareRow = body.querySelector("#cs-share-row");
+        const shareLink = body.querySelector("#cs-share-link");
+
+        function refreshInvite() {
+          if (picked) {
+            inviteInfo.textContent = "Публичный канал — ссылка формируется по @username.";
+            shareRow.style.display = "none";
+          } else {
+            const token = chat.invite_token || "(сгенерируется при сохранении)";
+            inviteInfo.textContent = "Приватный канал — присоединиться можно только по ссылке.";
+            shareRow.style.display = "flex";
+            shareLink.textContent = `${location.origin}${location.pathname}?c=${token}`;
+          }
+        }
+        refreshInvite();
+
+        body.querySelector("#cs-copy").addEventListener("click", () => {
+          navigator.clipboard.writeText(shareLink.textContent);
+          toast("Ссылка скопирована", "success");
+        });
+
+        // Кнопки
+        const f = this._openModal.footerEl;
+        f.innerHTML = "";
+        const cancel = document.createElement("button");
+        cancel.className = "btn btn-ghost"; cancel.textContent = "Отмена";
+        cancel.addEventListener("click", () => this.closeModal());
+        const save = document.createElement("button");
+        save.className = "btn btn-primary"; save.textContent = "Сохранить";
+        save.addEventListener("click", async () => {
+          const errEl = body.querySelector("#cs-error");
+          errEl.classList.remove("show");
+          const title = body.querySelector("#cs-title").value.trim();
+          const desc = body.querySelector("#cs-desc").value.trim();
+          const uname = body.querySelector("#cs-username").value.trim().toLowerCase();
+
+          if (!title) {
+            errEl.textContent = "Введите название"; errEl.classList.add("show"); return;
+          }
+          if (picked && !/^[a-z][a-z0-9_]{4,31}$/.test(uname)) {
+            errEl.textContent = "Username: 5–32 символа, начинается с буквы, a-z, 0-9, _";
+            errEl.classList.add("show"); return;
+          }
+
+          try {
+            const { error } = await supabase.rpc("update_channel_settings", {
+              p_chat_id: chat.id,
+              p_is_public: picked,
+              p_username: picked ? uname : null,
+              p_title: title,
+              p_description: desc,
+            });
+            if (error) throw error;
+            toast("Настройки сохранены", "success");
+            Sounds.success();
+            this.closeModal();
+            await this.refreshChats();
+          } catch (e) {
+            errEl.textContent = e.message || "Ошибка";
+            errEl.classList.add("show");
+          }
+        });
+        f.appendChild(cancel); f.appendChild(save);
+      },
+    });
+  }
+
+  openChannelShare(chat) {
+    const url = chat.is_public && chat.username
+      ? `${location.origin}${location.pathname}?c=${chat.username}`
+      : `${location.origin}${location.pathname}?c=${chat.invite_token}`;
+    this.openModal({
+      title: "Поделиться каналом",
+      narrow: true,
+      body: (body) => {
+        body.innerHTML = `
+          <p style="color:var(--text-2);font-size:13px;margin-bottom:10px">
+            ${chat.is_public
+              ? `Публичный канал — любой может найти по @${escapeHtml(chat.username)}.`
+              : "Приватный канал — присоединиться можно только по этой ссылке."}
+          </p>
+          <div class="share-row">
+            <span class="share-link" id="ch-share">${escapeHtml(url)}</span>
+          </div>`;
+        body.querySelector("#ch-share").addEventListener("click", () => {
+          navigator.clipboard.writeText(url);
+          toast("Скопировано", "success");
+        });
+        const f = this._openModal.footerEl;
+        f.innerHTML = "";
+        const copy = document.createElement("button");
+        copy.className = "btn btn-primary"; copy.textContent = "Копировать ссылку";
+        copy.addEventListener("click", () => {
+          navigator.clipboard.writeText(url);
+          toast("Скопировано", "success");
+          Sounds.success();
+        });
+        f.appendChild(copy);
+      },
+    });
+  }
+
+  /* ============================================================
+     DEEP LINKS
+     ============================================================ */
+  async handleDeepLink() {
+    try {
+      const params = new URLSearchParams(location.search);
+      const chan = params.get("c");
+      const usr = params.get("u");
+
+      if (chan) {
+        // Может быть @username или invite_token
+        const ch = await this.tryFindChannel(chan.replace(/^@/, ""));
+        if (ch) {
+          if (ch.already_member) {
+            await this.openChatById(ch.id);
+          } else if (ch.is_public) {
+            if (confirm(`Присоединиться к каналу «${ch.title}»?`)) {
+              try {
+                await supabase.rpc("join_channel", { p_chat_id: ch.id });
+                await this.refreshChats();
+                await this.openChatById(ch.id);
+                toast("Присоединились", "success");
+              } catch (e) { toast(e.message || "Ошибка", "error"); }
+            }
+          } else {
+            // Приватный — нужен confirm
+            if (confirm(`Присоединиться к приватному каналу «${ch.title}»?`)) {
+              try {
+                await supabase.from("chat_members").insert({
+                  chat_id: ch.id, user_id: this.user.id, role: "member",
+                });
+                await this.refreshChats();
+                await this.openChatById(ch.id);
+                toast("Присоединились", "success");
+              } catch (e) { toast(e.message || "Ошибка", "error"); }
+            }
+          }
+        } else {
+          toast("Канал не найден", "warning");
+        }
+      }
+
+      if (usr) {
+        const { data } = await supabase.rpc("search_user", { query: usr });
+        const u = Array.isArray(data) ? data[0] : null;
+        if (u && u.id !== this.user.id) this.openUserProfile(u.id, u);
+      }
+    } catch (_) {}
+  }
+
+  /* ============================================================
+     SETTINGS
      ============================================================ */
   openSettings() {
     this.openModal({
@@ -2303,12 +3104,20 @@ class NEXORA {
             toast("ID скопирован", "success");
             Sounds.click();
           }, "Copy"),
+          this.row("Аккаунты", "Переключение между аккаунтами", () => {
+            this.closeModal();
+            setTimeout(() => this.openAccountsSwitcher(), 100);
+          }, "Открыть"),
         ]));
 
         // Security
         body.appendChild(this.section("🔒 Безопасность", [
           this.row("Пароль", "Изменить пароль", () => this.changePassword()),
           this.row("2FA", "TOTP-аутентификация", () => this.toggle2FA()),
+          this.row("Сессии", "Активные устройства и входы", () => {
+            this.closeModal();
+            setTimeout(() => this.openSessionsDialog(), 100);
+          }, "Открыть"),
         ]));
 
         // Notifications
@@ -2448,7 +3257,7 @@ class NEXORA {
         about.innerHTML = `<h3>ℹ О приложении</h3>
           <div style="color:var(--text-0);font-weight:700">NEXORA</div>
           <div style="color:var(--text-2);font-size:13px;margin-top:4px">Connect without limits.</div>
-          <div style="color:var(--text-3);font-size:12px;margin-top:6px">Version 5.1</div>`;
+          <div style="color:var(--text-3);font-size:12px;margin-top:6px">Version 6.0</div>`;
         body.appendChild(about);
 
         // Logout
@@ -2457,6 +3266,60 @@ class NEXORA {
         out.textContent = "Выйти из аккаунта";
         out.addEventListener("click", () => { this.closeModal(); this.logout(); });
         body.appendChild(out);
+      },
+    });
+  }
+
+  async openSessionsDialog() {
+    let sessions = [];
+    try {
+      const { data, error } = await supabase.rpc("list_my_sessions");
+      if (!error && data) sessions = data;
+    } catch (_) {}
+
+    this.openModal({
+      title: "Активные сессии",
+      body: (body) => {
+        body.innerHTML = "";
+        if (!sessions.length) {
+          body.innerHTML = `<p class="muted">Нет данных о сессиях</p>`;
+        } else {
+          sessions.forEach(s => {
+            const row = document.createElement("div");
+            row.className = "session-row";
+            const ua = s.user_agent || "Unknown device";
+            row.innerHTML = `
+              <div class="session-info">
+                <div class="session-ua">${escapeHtml(ua)}</div>
+                <div class="session-date">Последняя активность: ${escapeHtml(formatDateTime(s.updated_at))}</div>
+              </div>`;
+            body.appendChild(row);
+          });
+        }
+
+        const note = document.createElement("p");
+        note.style.cssText = "color:var(--text-3);font-size:12px;margin-top:14px";
+        note.textContent = "Кнопка «Выйти везде» завершит все сеансы на всех устройствах, кроме текущего. Придётся вводить пароль заново.";
+        body.appendChild(note);
+
+        const f = this._openModal.footerEl;
+        f.innerHTML = "";
+        const close = document.createElement("button");
+        close.className = "btn btn-ghost"; close.textContent = "Закрыть";
+        close.addEventListener("click", () => this.closeModal());
+        const revoke = document.createElement("button");
+        revoke.className = "btn btn-danger"; revoke.textContent = "Выйти везде";
+        revoke.addEventListener("click", async () => {
+          if (!confirm("Завершить все сессии на других устройствах?")) return;
+          try {
+            const { error } = await supabase.rpc("revoke_all_sessions", { keep_token: null });
+            if (error) throw error;
+            toast("Все сессии завершены", "success");
+            Sounds.success();
+            this.closeModal();
+          } catch (e) { toast(e.message || "Ошибка", "error"); }
+        });
+        f.appendChild(close); f.appendChild(revoke);
       },
     });
   }
@@ -2558,9 +3421,16 @@ class NEXORA {
         const uploadBtn = document.createElement("button");
         uploadBtn.className = "btn btn-primary btn-block";
         uploadBtn.textContent = "📷 Загрузить аватар";
-        uploadBtn.style.marginBottom = "14px";
+        uploadBtn.style.marginBottom = "8px";
         uploadBtn.addEventListener("click", () => $("file-avatar").click());
         body.appendChild(uploadBtn);
+
+        const coverBtn = document.createElement("button");
+        coverBtn.className = "btn btn-ghost btn-block";
+        coverBtn.textContent = "🖼️ Загрузить обложку профиля";
+        coverBtn.style.marginBottom = "14px";
+        coverBtn.addEventListener("click", () => $("file-cover").click());
+        body.appendChild(coverBtn);
 
         const unameSec = document.createElement("div");
         unameSec.className = "settings-section";
@@ -2578,6 +3448,12 @@ class NEXORA {
           try {
             await this.updateProfile({ username: v });
             this.renderSidebarFooter();
+            this.rememberAccount({
+              id: this.user.id,
+              username: this.profile.username,
+              nexora_id: this.profile.nexora_id,
+              avatar_url: this.profile.avatar_url,
+            });
             toast("Username обновлён", "success");
             Sounds.success();
           } catch (e) { toast(e.message || "Ошибка", "error"); }
@@ -2646,8 +3522,11 @@ class NEXORA {
 
         const cardEl = document.createElement("div");
         cardEl.className = "profile-card";
+        const coverHTML = card.cover_url
+          ? `<div class="profile-cover" style="background-image:url('${safeUrl(card.cover_url)}')"></div>`
+          : `<div class="profile-cover"></div>`;
         cardEl.innerHTML = `
-          <div class="profile-cover"></div>
+          ${coverHTML}
           <div class="profile-avatar-wrap">
             ${avatarHTML(card, "xl").replace('class="avatar avatar-xl', 'class="avatar avatar-xl profile-avatar-clickable')}
           </div>
@@ -2973,9 +3852,17 @@ class NEXORA {
     if (ctype === "saved") {
       return this.openChatThemeDialog(this.activeChat);
     }
+    if (ctype === "channel") {
+      if (this.activeChat.my_role === "owner" || this.activeChat.my_role === "admin") {
+        return this.openChannelSettings(this.activeChat);
+      } else {
+        return this.openChannelInfoReadonly(this.activeChat);
+      }
+    }
 
+    // Группа
     this.openModal({
-      title: ctype === "channel" ? "Канал" : "Группа",
+      title: "Группа",
       body: (body) => {
         const hero = document.createElement("div");
         hero.className = "profile-hero";
@@ -2983,21 +3870,6 @@ class NEXORA {
           ${avatarHTML(this.activePeer || { username: this.activeChat.display_title }, "lg")}
           <div class="profile-hero-name">${escapeHtml(this.activeChat.display_title)}</div>`;
         body.appendChild(hero);
-
-        const searchSec = document.createElement("div");
-        searchSec.className = "settings-section";
-        searchSec.innerHTML = `<h3>🔍 Поиск по сообщениям</h3>`;
-        const sInp = document.createElement("input");
-        sInp.placeholder = "Текст…";
-        sInp.addEventListener("keydown", (e) => {
-          if (e.key === "Enter") {
-            this.messageSearchQuery = sInp.value.trim();
-            this.renderMessages();
-            this.closeModal();
-          }
-        });
-        searchSec.appendChild(sInp);
-        body.appendChild(searchSec);
 
         const info = document.createElement("div");
         info.className = "settings-section";
@@ -3060,6 +3932,53 @@ class NEXORA {
     });
   }
 
+  openChannelInfoReadonly(chat) {
+    this.openModal({
+      title: "О канале",
+      body: (body) => {
+        const hero = document.createElement("div");
+        hero.className = "profile-hero";
+        hero.innerHTML = `
+          <div class="avatar avatar-lg">📢</div>
+          <div class="profile-hero-name">${escapeHtml(chat.title || "")}</div>
+          <div class="profile-id-badge">${chat.username ? "@" + escapeHtml(chat.username) : "приватный"}</div>`;
+        body.appendChild(hero);
+
+        const info = document.createElement("div");
+        info.className = "settings-section";
+        info.innerHTML = `<h3>Информация</h3>
+          <div style="color:var(--text-2);font-size:13px">Подписчиков: ${chat.members_count || 0}</div>
+          ${chat.description ? `<div style="color:var(--text-2);font-size:13px;margin-top:8px">${escapeHtml(chat.description)}</div>` : ""}`;
+        body.appendChild(info);
+
+        const btnShare = document.createElement("button");
+        btnShare.className = "btn btn-ghost btn-block";
+        btnShare.textContent = "🔗 Поделиться ссылкой";
+        btnShare.addEventListener("click", () => {
+          this.closeModal();
+          setTimeout(() => this.openChannelShare(chat), 100);
+        });
+        body.appendChild(btnShare);
+
+        const leave = document.createElement("button");
+        leave.className = "btn btn-danger btn-block";
+        leave.style.marginTop = "10px";
+        leave.textContent = "Отписаться";
+        leave.addEventListener("click", async () => {
+          if (!confirm("Отписаться от канала?")) return;
+          await supabase.from("chat_members").delete().eq("chat_id", chat.id).eq("user_id", this.user.id);
+          this.closeModal();
+          $("chat-view").classList.add("hidden");
+          $("welcome").classList.remove("hidden");
+          this.activeChat = null;
+          await this.refreshChats();
+          toast("Отписались", "warning");
+        });
+        body.appendChild(leave);
+      },
+    });
+  }
+
   /* ============================================================
      ACCOUNT ACTIONS
      ============================================================ */
@@ -3070,6 +3989,12 @@ class NEXORA {
     try {
       await this.updateProfile({ username: v });
       this.renderSidebarFooter();
+      this.rememberAccount({
+        id: this.user.id,
+        username: this.profile.username,
+        nexora_id: this.profile.nexora_id,
+        avatar_url: this.profile.avatar_url,
+      });
       toast("Username обновлён", "success");
       Sounds.success();
     } catch (e) { toast(e.message || "Ошибка", "error"); }
@@ -3174,7 +4099,7 @@ class NEXORA {
   }
 
   /* ============================================================
-     NEW CHAT / INVITE
+     NEW CHAT / CHANNEL
      ============================================================ */
   openNewChatDialog() {
     this.openModal({
@@ -3191,22 +4116,59 @@ class NEXORA {
             <input id="nc-title" maxlength="80" placeholder="Название">
             <input id="nc-desc" maxlength="200" placeholder="Описание (необязательно)" style="margin-top:10px">
           </div>
+          <div class="settings-section" id="nc-chan-block" style="display:none">
+            <h3>Публичность</h3>
+            <div id="nc-public" style="display:flex;gap:8px"></div>
+            <div id="nc-username-wrap" style="margin-top:10px;display:none">
+              <label style="font-size:11px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:1px">Username</label>
+              <div class="input-prefix" style="margin-top:6px">
+                <span class="prefix">@</span>
+                <input id="nc-username" maxlength="32" placeholder="my_channel">
+              </div>
+              <small style="display:block;margin-top:6px;color:var(--text-3);font-size:11px">5–32 символа, латиница, цифры, _. Люди смогут найти канал по @username.</small>
+            </div>
+          </div>
           <div class="settings-section">
             <h3>Участники из контактов</h3>
             <div id="nc-members"></div>
           </div>`;
 
         const typeBox = body.querySelector("#nc-type");
-        ["group", "channel"].forEach(t => {
+        const chanBlock = body.querySelector("#nc-chan-block");
+        let isPublic = true;
+        let pickedPublic = true;
+
+        const setType = (t) => {
+          chatType = t;
+          typeBox.querySelectorAll("button").forEach(x => x.className = "btn btn-ghost");
+          const idx = t === "group" ? 0 : 1;
+          typeBox.children[idx].className = "btn btn-primary";
+          chanBlock.style.display = t === "channel" ? "block" : "none";
+        };
+
+        ["👥 Группа", "📢 Канал"].forEach((label, i) => {
           const b = document.createElement("button");
-          b.className = "btn " + (t === "group" ? "btn-primary" : "btn-ghost");
-          b.textContent = t === "group" ? "👥 Группа" : "📢 Канал";
-          b.addEventListener("click", () => {
-            chatType = t;
-            typeBox.querySelectorAll("button").forEach(x => x.className = "btn btn-ghost");
-            b.className = "btn btn-primary";
-          });
+          b.className = "btn " + (i === 0 ? "btn-primary" : "btn-ghost");
+          b.textContent = label;
+          b.addEventListener("click", () => setType(i === 0 ? "group" : "channel"));
           typeBox.appendChild(b);
+        });
+
+        const pubBox = body.querySelector("#nc-public");
+        const unameWrap = body.querySelector("#nc-username-wrap");
+        const setPublic = (pub) => {
+          pickedPublic = pub;
+          pubBox.querySelectorAll("button").forEach(x => x.className = "btn btn-ghost");
+          const idx = pub ? 0 : 1;
+          pubBox.children[idx].className = "btn btn-primary";
+          unameWrap.style.display = pub ? "block" : "none";
+        };
+        ["Публичный", "Приватный"].forEach((label, i) => {
+          const b = document.createElement("button");
+          b.className = "btn " + (i === 0 ? "btn-primary" : "btn-ghost");
+          b.textContent = label;
+          b.addEventListener("click", () => setPublic(i === 0));
+          pubBox.appendChild(b);
         });
 
         const membersBox = body.querySelector("#nc-members");
@@ -3239,17 +4201,37 @@ class NEXORA {
           const title = body.querySelector("#nc-title").value.trim();
           if (!title) return toast("Введи название", "warning");
           const ids = checks.filter(c => c.checked).map(c => c.value);
+          const desc = body.querySelector("#nc-desc").value.trim() || null;
+
           try {
-            const { data, error } = await supabase.rpc("create_group_chat", {
-              p_title: title, p_member_ids: ids, p_type: chatType,
-              p_description: body.querySelector("#nc-desc").value.trim() || null,
-            });
-            if (error) throw error;
+            let chatId;
+            if (chatType === "channel") {
+              const uname = pickedPublic ? body.querySelector("#nc-username").value.trim().toLowerCase() : null;
+              if (pickedPublic && !/^[a-z][a-z0-9_]{4,31}$/.test(uname || "")) {
+                return toast("Username: 5–32, начинается с буквы, a-z 0-9 _", "warning");
+              }
+              const { data, error } = await supabase.rpc("create_channel", {
+                p_title: title,
+                p_description: desc,
+                p_member_ids: ids,
+                p_is_public: pickedPublic,
+                p_username: uname,
+              });
+              if (error) throw error;
+              chatId = data;
+            } else {
+              const { data, error } = await supabase.rpc("create_group_chat", {
+                p_title: title, p_member_ids: ids, p_type: "group",
+                p_description: desc,
+              });
+              if (error) throw error;
+              chatId = data;
+            }
             toast(chatType === "channel" ? "Канал создан" : "Группа создана", "success");
             Sounds.success();
             this.closeModal();
             await this.refreshChats();
-            await this.openChatById(data);
+            await this.openChatById(chatId);
           } catch (e) { toast(e.message || "Ошибка", "error"); }
         });
         f.appendChild(cancel); f.appendChild(create);
@@ -3327,6 +4309,16 @@ class NEXORA {
       const lTop = $("btn-logout-top");
       if (lTop) lTop.addEventListener("click", () => this.logout());
 
+      const accBtn = $("btn-accounts");
+      if (accBtn) accBtn.addEventListener("click", () => { Sounds.click(); this.openAccountsSwitcher(); });
+
+      const searchChan = $("btn-search-channel");
+      if (searchChan) searchChan.addEventListener("click", () => {
+        Sounds.click();
+        const q = prompt("Введите @username или ссылку-приглашение:");
+        if (q) this.searchChannel(q.replace(/^@/, ""));
+      });
+
       $("me-avatar").addEventListener("click", () => { Sounds.click(); this.openProfile(); });
       $("me-name").addEventListener("click", () => { Sounds.click(); this.openProfile(); });
 
@@ -3351,6 +4343,8 @@ class NEXORA {
       $("btn-send").addEventListener("click", () => this.sendCurrent());
       $("btn-attach").addEventListener("click", () => { Sounds.click(); this.pickAttachment(); });
       $("btn-emoji").addEventListener("click", () => { Sounds.click(); this.openPicker(); });
+      const pollBtn = $("btn-poll");
+      if (pollBtn) pollBtn.addEventListener("click", () => { Sounds.click(); this.openPollCreator(); });
       $("attach-cancel").addEventListener("click", () => this.hideAttachBar());
       $("btn-chat-info").addEventListener("click", () => { Sounds.click(); this.openChatInfo(); });
       $("chat-header-body").addEventListener("click", () => { Sounds.click(); this.openChatInfo(); });
@@ -3382,7 +4376,24 @@ class NEXORA {
           toast("Загрузка…", "info");
           await this.uploadAvatar(f);
           this.renderSidebarFooter();
+          this.rememberAccount({
+            id: this.user.id,
+            username: this.profile.username,
+            nexora_id: this.profile.nexora_id,
+            avatar_url: this.profile.avatar_url,
+          });
           toast("Аватар обновлён", "success");
+          Sounds.success();
+        } catch (err) { toast(err.message || "Ошибка", "error"); }
+      });
+
+      const fileCover = $("file-cover");
+      if (fileCover) fileCover.addEventListener("change", async (e) => {
+        const f = e.target.files[0]; if (!f) return;
+        try {
+          toast("Загрузка…", "info");
+          await this.uploadCover(f);
+          toast("Обложка обновлена", "success");
           Sounds.success();
         } catch (err) { toast(err.message || "Ошибка", "error"); }
       });
@@ -3403,8 +4414,6 @@ class NEXORA {
         $("sidebar").classList.remove("hidden-mobile");
       }
 
-      this.handleDeepLink();
-
       this.boot().catch(err => {
         console.error(err);
         toast("Ошибка запуска", "error");
@@ -3412,22 +4421,6 @@ class NEXORA {
         this.showAuthCard("login");
       });
     });
-  }
-
-  async handleDeepLink() {
-    try {
-      const params = new URLSearchParams(location.search);
-      const uid = params.get("u");
-      if (!uid) return;
-      setTimeout(async () => {
-        if (!this.user || !this.profile) return;
-        try {
-          const { data } = await supabase.rpc("search_user", { query: uid });
-          const u = Array.isArray(data) ? data[0] : null;
-          if (u && u.id !== this.user.id) this.openUserProfile(u.id, u);
-        } catch (_) {}
-      }, 1500);
-    } catch (_) {}
   }
 
   async uploadAvatar(file) {
@@ -3442,6 +4435,21 @@ class NEXORA {
     const { data: pub } = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(path);
     const url = pub.publicUrl + "?t=" + Date.now();
     await this.updateProfile({ avatar_url: url });
+    return url;
+  }
+
+  async uploadCover(file) {
+    if (!file.type.startsWith("image/")) throw new Error("Только изображения");
+    if (file.size > COVER_MAX) throw new Error("Максимум 4 MB");
+    const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
+    const path = `${this.user.id}/cover.${ext}`;
+    const { error: upErr } = await supabase.storage
+      .from(AVATAR_BUCKET)
+      .upload(path, file, { upsert: true, contentType: file.type });
+    if (upErr) throw upErr;
+    const { data: pub } = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(path);
+    const url = pub.publicUrl + "?t=" + Date.now();
+    await this.updateProfile({ cover_url: url });
     return url;
   }
 }
