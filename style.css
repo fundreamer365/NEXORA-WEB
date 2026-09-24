@@ -1156,3 +1156,277 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
   .chat-header { padding: 8px; }
   .profile-actions { grid-template-columns: 1fr; }
 }
+
+/* ============================================================
+   NEXORA v6.0 — опросы, каналы, аккаунты, read-receipts
+   ============================================================ */
+
+/* ---------- Галочки прочитано ---------- */
+.msg-status {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 4px;
+  font-size: 11px;
+  line-height: 1;
+}
+.msg-status .check {
+  color: rgba(255,255,255,0.6);
+  transition: color 0.2s;
+}
+.msg-status.read .check {
+  color: #4da6ff;
+}
+.msg-row.own .msg-status .check { color: rgba(255,255,255,0.75); }
+.msg-row.own .msg-status.read .check { color: #7fffd4; }
+
+/* ---------- Опросы ---------- */
+.poll-card {
+  min-width: 260px;
+  max-width: 360px;
+}
+.poll-question {
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 10px;
+  color: var(--text-0);
+}
+.poll-option {
+  position: relative;
+  padding: 10px 12px;
+  margin-bottom: 6px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.15s;
+  overflow: hidden;
+}
+.msg-row.own .poll-option {
+  background: rgba(255,255,255,0.12);
+  border-color: rgba(255,255,255,0.2);
+}
+.poll-option:hover { border-color: var(--accent); }
+.poll-option.disabled { cursor: default; }
+.poll-option.voted { border-color: var(--accent); }
+.poll-option.correct { border-color: var(--success); background: rgba(61,220,132,0.15); }
+.poll-option.incorrect { border-color: var(--error); background: rgba(255,90,110,0.15); }
+.poll-option-bar {
+  position: absolute;
+  left: 0; top: 0; bottom: 0;
+  background: rgba(124,92,255,0.18);
+  transition: width 0.4s ease;
+  z-index: 0;
+}
+.msg-row.own .poll-option-bar {
+  background: rgba(255,255,255,0.18);
+}
+.poll-option-text {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--text-0);
+}
+.poll-option-pct {
+  font-weight: 700;
+  font-size: 12px;
+  opacity: 0.85;
+  flex-shrink: 0;
+}
+.poll-meta {
+  font-size: 11px;
+  color: var(--text-3);
+  margin-top: 8px;
+}
+.poll-checkbox {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  border: 2px solid currentColor;
+  margin-right: 8px;
+  vertical-align: -2px;
+  opacity: 0.6;
+}
+.poll-option.voted .poll-checkbox {
+  background: var(--accent);
+  border-color: var(--accent);
+  opacity: 1;
+}
+
+/* ---------- Публичный/приватный канал — бейдж ---------- */
+.channel-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  padding: 1px 6px;
+  border-radius: 6px;
+  margin-left: 6px;
+  vertical-align: middle;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.channel-badge.public {
+  background: rgba(61,220,132,0.15);
+  color: var(--success);
+}
+.channel-badge.private {
+  background: rgba(255,181,71,0.15);
+  color: var(--warning);
+}
+
+/* ---------- Поле с префиксом @ ---------- */
+.input-prefix {
+  display: flex;
+  align-items: center;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.input-prefix:focus-within { border-color: var(--accent); }
+.input-prefix .prefix {
+  padding: 0 10px;
+  color: var(--text-3);
+  font-weight: 700;
+  font-size: 14px;
+  user-select: none;
+}
+.input-prefix input {
+  border: none;
+  background: transparent;
+  border-radius: 0;
+}
+.input-prefix input:focus { box-shadow: none; }
+
+/* ---------- Ссылка-поделиться ---------- */
+.share-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 10px 12px;
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-top: 8px;
+}
+.share-row .share-link {
+  flex: 1;
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  color: var(--accent);
+  user-select: all;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.share-row .share-link:hover { text-decoration: underline; }
+
+/* ---------- Список сессий ---------- */
+.session-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+.session-row:last-child { border-bottom: none; }
+.session-info { flex: 1; min-width: 0; }
+.session-ua {
+  font-size: 13px;
+  color: var(--text-0);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.session-date {
+  font-size: 11px;
+  color: var(--text-3);
+  margin-top: 2px;
+}
+.session-current {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--success);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ---------- Системные сообщения ---------- */
+.msg-row.system {
+  justify-content: center;
+  max-width: 90%;
+  margin: 6px auto;
+}
+.msg-row.system .msg-bubble {
+  background: rgba(255,255,255,0.05);
+  border-color: transparent;
+  color: var(--text-3);
+  font-size: 12px;
+  padding: 6px 14px;
+  border-radius: 14px;
+  text-align: center;
+}
+
+/* ---------- Переключатель аккаунтов ---------- */
+.account-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+  border: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+.account-row:hover { background: var(--bg-2); }
+.account-row.current {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+}
+.account-info { flex: 1; min-width: 0; }
+.account-name { font-weight: 700; color: var(--text-0); font-size: 14px; }
+.account-id { font-family: ui-monospace, monospace; font-size: 11px; color: var(--text-3); margin-top: 2px; }
+.account-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: var(--success);
+  color: #fff;
+  text-transform: uppercase;
+}
+
+/* ---------- Обложка профиля (кастомная) ---------- */
+.profile-cover {
+  position: relative;
+  background-size: cover;
+  background-position: center;
+}
+.profile-cover-edit {
+  position: absolute;
+  right: 12px;
+  bottom: 12px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+  backdrop-filter: blur(10px);
+}
+.profile-cover-edit:hover { background: rgba(0,0,0,0.85); }
+
+/* ---------- Мобильные фиксы ---------- */
+@media (max-width: 768px) {
+  .poll-card { min-width: 0; max-width: 100%; }
+  .header-actions .icon-btn { width: 40px; height: 40px; font-size: 16px; }
+  .header-actions { gap: 0; }
+}
