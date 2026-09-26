@@ -1,5 +1,5 @@
 /* ============================================================
-   NEXORA v5.1 — единый style.css
+   NEXORA v7.0 — единый style.css
    ============================================================ */
 
 :root {
@@ -194,7 +194,7 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
 @keyframes scaleIn { from { transform: scale(0.95); opacity: 0; } to { transform: scale(1); opacity: 1; } }
 @keyframes shake { 0%,100% { transform: translateX(0); } 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
 
-/* ---------- App layout ---------- */
+/* ---------- App ---------- */
 .app { display: grid; grid-template-columns: 320px 1fr; height: 100%; background: var(--bg-0); }
 
 /* ---------- Sidebar ---------- */
@@ -246,6 +246,9 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
 .list-item.active { background: var(--accent-dim); box-shadow: inset 0 0 0 1px rgba(124,92,255,0.35); }
 .list-item[data-saved="1"] .avatar {
   background: linear-gradient(135deg, #ffb547, #ff8a3d) !important;
+}
+.list-item[data-notif="1"] .avatar {
+  background: linear-gradient(135deg, #4da6ff, #7c5cff) !important;
 }
 .list-item-body { flex: 1; min-width: 0; }
 .list-item-title {
@@ -328,7 +331,7 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
 }
 .welcome-hint { margin-top: 24px; font-size: 13px; color: var(--text-3); }
 
-/* ---------- Chat view ---------- */
+/* ---------- Chat ---------- */
 .chat-view { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 
 .chat-header {
@@ -484,6 +487,22 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
   box-shadow: 0 0 0 2px rgba(255,181,71,0.7);
 }
 
+/* Системные сообщения */
+.msg-row.system {
+  justify-content: center;
+  max-width: 90%;
+  margin: 6px auto;
+}
+.msg-row.system .msg-bubble {
+  background: rgba(255,255,255,0.05);
+  border-color: transparent;
+  color: var(--text-3);
+  font-size: 12px;
+  padding: 6px 14px;
+  border-radius: 14px;
+  text-align: center;
+}
+
 /* ---------- Reply / Attach bars ---------- */
 .reply-bar {
   display: flex; align-items: center; gap: 10px;
@@ -542,7 +561,7 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
 }
 .send-btn { height: 42px; padding: 0 16px; font-size: 16px; }
 
-/* ---------- Settings sections (inside modals) ---------- */
+/* ---------- Settings sections ---------- */
 .settings-section {
   background: var(--bg-1);
   border: 1px solid var(--border);
@@ -612,6 +631,8 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
   height: 120px;
   border-radius: 18px 18px 0 0;
   background: linear-gradient(135deg, rgba(124,92,255,0.35), rgba(77,166,255,0.25));
+  background-size: cover;
+  background-position: center;
   position: relative;
   overflow: hidden;
   margin: -22px -24px 0 -24px;
@@ -620,7 +641,10 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
   content: "";
   position: absolute; inset: 0;
   background: radial-gradient(circle at 30% 20%, rgba(255,255,255,0.15), transparent 60%);
+  pointer-events: none;
 }
+.profile-cover.with-image::after { background: none; }
+
 .profile-card {
   position: relative;
   background: transparent;
@@ -703,17 +727,10 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
   padding: 12px;
   text-align: center;
 }
-.profile-stat-value {
-  font-size: 20px;
-  font-weight: 800;
-  color: var(--text-0);
-}
+.profile-stat-value { font-size: 20px; font-weight: 800; color: var(--text-0); }
 .profile-stat-label {
-  font-size: 11px;
-  color: var(--text-3);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  margin-top: 2px;
+  font-size: 11px; color: var(--text-3);
+  text-transform: uppercase; letter-spacing: 0.5px; margin-top: 2px;
 }
 
 .profile-actions {
@@ -723,10 +740,8 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
   margin-top: 18px;
 }
 .profile-actions .btn {
-  width: 100%;
-  justify-content: center;
-  padding: 12px 14px;
-  font-size: 13px;
+  width: 100%; justify-content: center;
+  padding: 12px 14px; font-size: 13px;
 }
 .profile-actions .btn-full { grid-column: 1 / -1; }
 
@@ -741,7 +756,7 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
 .avatar-grid button:hover { transform: scale(1.08); border-color: var(--accent); }
 .avatar-grid button img { width: 100%; height: 100%; display: block; }
 
-/* ---------- User card in search ---------- */
+/* ---------- User card ---------- */
 .user-card {
   display: flex; align-items: center; gap: 12px;
   padding: 14px;
@@ -820,9 +835,7 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
   z-index: 8000;
 }
 .reaction-bar button {
-  font-size: 22px;
-  padding: 4px 8px;
-  border-radius: 50%;
+  font-size: 22px; padding: 4px 8px; border-radius: 50%;
   transition: transform 0.15s, background 0.15s;
 }
 .reaction-bar button:hover { transform: scale(1.3); background: rgba(124,92,255,0.2); }
@@ -913,282 +926,11 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
 }
 @keyframes badgeIn { from { transform: scale(0); } to { transform: scale(1); } }
 
-/* ============================================================
-   МОДАЛЬНЫЕ ОКНА (настройки, профили, создание каналов)
-   ============================================================ */
-.nx-modal-backdrop {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.72);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 9000;
-  padding: 24px;
-  animation: nxFadeIn 0.2s ease;
-}
-
-.nx-modal {
-  background: var(--bg-1);
-  border: 1px solid var(--border);
-  border-radius: 20px;
-  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.7);
-  width: 100%;
-  max-width: 560px;
-  max-height: 88vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  animation: nxScaleIn 0.24s cubic-bezier(.4,0,.2,1);
-}
-
-.nx-modal-wide { max-width: 720px; }
-.nx-modal-narrow { max-width: 420px; }
-
-.nx-modal-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 20px 24px;
-  border-bottom: 1px solid var(--border);
-  background: linear-gradient(180deg, rgba(124,92,255,0.06), transparent);
-  flex-shrink: 0;
-}
-
-.nx-modal-title {
-  flex: 1;
-  font-size: 17px;
-  font-weight: 800;
-  color: var(--text-0);
-  letter-spacing: 0.2px;
-}
-
-.nx-modal-close {
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  color: var(--text-2);
-  font-size: 20px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  transition: background 0.2s, color 0.2s;
-}
-.nx-modal-close:hover {
-  background: var(--bg-2);
-  color: var(--text-0);
-}
-
-.nx-modal-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 22px 24px;
-  overscroll-behavior: contain;
-}
-
-.nx-modal-footer {
-  display: flex;
-  gap: 10px;
-  justify-content: flex-end;
-  padding: 16px 24px;
-  border-top: 1px solid var(--border);
-  background: var(--bg-1);
-  flex-shrink: 0;
-}
-
-.nx-modal-body .settings-section {
-  background: var(--bg-2);
-  border-color: var(--border);
-  margin-bottom: 14px;
-}
-.nx-modal-body .settings-section:last-child { margin-bottom: 0; }
-
-.nx-modal-body .profile-card {
-  margin: 0;
-  border: none;
-  background: transparent;
-  padding: 0;
-}
-
-.nx-modal-body::-webkit-scrollbar { width: 8px; }
-.nx-modal-body::-webkit-scrollbar-thumb {
-  background: var(--border-l);
-  border-radius: 4px;
-}
-
-@keyframes nxFadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-@keyframes nxScaleIn {
-  from { opacity: 0; transform: scale(0.96) translateY(8px); }
-  to { opacity: 1; transform: scale(1) translateY(0); }
-}
-
-/* ============================================================
-   МОБИЛЬНАЯ АДАПТАЦИЯ
-   ============================================================ */
-.mobile-only { display: none; }
-
-@media (max-width: 768px) {
-  html, body {
-    height: 100dvh !important;
-    min-height: 100dvh !important;
-    max-height: 100dvh !important;
-    overflow: hidden;
-  }
-
-  .app {
-    display: block;
-    height: 100dvh !important;
-    position: relative;
-  }
-
-  .sidebar {
-    position: absolute; inset: 0;
-    width: 100% !important;
-    height: 100dvh !important;
-    z-index: 10;
-    display: flex; flex-direction: column;
-    transition: transform 0.28s cubic-bezier(.4,0,.2,1);
-    padding-bottom: env(safe-area-inset-bottom, 0);
-  }
-  .sidebar.hidden-mobile { transform: translateX(-100%); }
-
-  .sidebar-list { flex: 1 1 auto; overflow-y: auto; min-height: 0; }
-  .sidebar-footer {
-    flex: 0 0 auto;
-    background: var(--bg-1);
-    border-top: 1px solid var(--border);
-    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0));
-  }
-
-  .main { position: absolute; inset: 0; z-index: 5; }
-
-  .sidebar-header .icon-btn,
-  .sidebar-footer .icon-btn {
-    width: 44px; height: 44px;
-    font-size: 18px;
-  }
-  .chat-header .icon-btn,
-  .chat-header #btn-chat-info {
-    width: 44px; height: 44px;
-    font-size: 18px;
-  }
-
-  .chat-header { padding: 10px 12px; gap: 8px; }
-  .chat-header-name { font-size: 14px; }
-  .chat-header-sub { font-size: 11px; }
-  .avatar-md { width: 38px; height: 38px; font-size: 15px; }
-  .mobile-only { display: inline-flex; }
-
-  .messages { padding: 12px 10px; gap: 4px; }
-  .msg-row { max-width: 88%; }
-  .msg-bubble { padding: 8px 12px; font-size: 14px; border-radius: 14px; }
-  .msg-image, .msg-video { max-width: 100%; max-height: 60vh; }
-
-  .composer { padding: 8px; gap: 4px; }
-  .composer textarea { font-size: 15px; padding: 10px 12px; }
-  .composer .icon-btn { width: 40px; height: 40px; font-size: 18px; }
-  .send-btn { width: 46px; height: 46px; font-size: 20px; padding: 0; }
-
-  .sidebar-header { padding: 12px 14px; }
-  .brand { font-size: 16px; letter-spacing: 2px; }
-  .sidebar-search { padding: 8px 12px; }
-  .sidebar-search input { padding: 10px 12px; font-size: 14px; }
-  .sidebar-tabs { padding: 6px 8px 0; }
-  .tab { padding: 8px 6px; font-size: 12px; }
-  .sidebar-list { padding: 6px; }
-  .list-item { padding: 10px 12px; }
-  .list-item-title { font-size: 14px; }
-  .list-item-sub { font-size: 12px; }
-
-  .settings-section { padding: 16px; }
-  .settings-row-label { font-size: 13px; }
-  .settings-row-desc { font-size: 11px; }
-  .profile-hero .avatar-xl { width: 88px; height: 88px; font-size: 32px; }
-  .profile-hero-name { font-size: 18px; }
-
-  .picker { left: 6px; right: 6px; height: 340px; }
-  .picker-body { grid-template-columns: repeat(7, 1fr); padding: 8px; }
-  .picker-body.stickers { grid-template-columns: repeat(3, 1fr); }
-
-  #toast-container { top: 10px; right: 10px; left: 10px; max-width: none; }
-
-  .auth-card { padding: 28px 20px; }
-  .auth-logo { font-size: 28px; }
-
-  .profile-cover { margin: -16px -16px 0 -16px; height: 100px; }
-  .profile-avatar-wrap { margin-top: -45px; }
-
-  /* Модалки — снизу на телефоне */
-  .nx-modal-backdrop {
-    padding: 0;
-    align-items: flex-end;
-  }
-  .nx-modal {
-    max-width: 100%;
-    max-height: 92dvh;
-    border-radius: 22px 22px 0 0;
-    animation: nxSlideUp 0.28s cubic-bezier(.4,0,.2,1);
-  }
-  .nx-modal-header { padding: 16px 18px; }
-  .nx-modal-body {
-    padding: 18px 18px;
-    padding-bottom: calc(18px + env(safe-area-inset-bottom, 0));
-  }
-  .nx-modal-footer {
-    padding: 14px 18px;
-    padding-bottom: calc(14px + env(safe-area-inset-bottom, 0));
-  }
-  .nx-modal-footer .btn { flex: 1; }
-
-  @keyframes nxSlideUp {
-    from { transform: translateY(100%); opacity: 0.4; }
-    to { transform: translateY(0); opacity: 1; }
-  }
-}
-
-@media (max-width: 380px) {
-  .msg-row { max-width: 92%; }
-  .chat-header { padding: 8px; }
-  .profile-actions { grid-template-columns: 1fr; }
-}
-
-/* ============================================================
-   NEXORA v6.0 — опросы, каналы, аккаунты, read-receipts
-   ============================================================ */
-
-/* ---------- Галочки прочитано ---------- */
-.msg-status {
-  display: inline-flex;
-  align-items: center;
-  margin-left: 4px;
-  font-size: 11px;
-  line-height: 1;
-}
-.msg-status .check {
-  color: rgba(255,255,255,0.6);
-  transition: color 0.2s;
-}
-.msg-status.read .check {
-  color: #4da6ff;
-}
-.msg-row.own .msg-status .check { color: rgba(255,255,255,0.75); }
-.msg-row.own .msg-status.read .check { color: #7fffd4; }
-
 /* ---------- Опросы ---------- */
-.poll-card {
-  min-width: 260px;
-  max-width: 360px;
-}
+.poll-card { min-width: 260px; max-width: 360px; }
 .poll-question {
-  font-weight: 700;
-  font-size: 14px;
-  margin-bottom: 10px;
-  color: var(--text-0);
+  font-weight: 700; font-size: 14px;
+  margin-bottom: 10px; color: var(--text-0);
 }
 .poll-option {
   position: relative;
@@ -1217,34 +959,17 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
   transition: width 0.4s ease;
   z-index: 0;
 }
-.msg-row.own .poll-option-bar {
-  background: rgba(255,255,255,0.18);
-}
+.msg-row.own .poll-option-bar { background: rgba(255,255,255,0.18); }
 .poll-option-text {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  font-size: 13px;
-  color: var(--text-0);
+  position: relative; z-index: 1;
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  font-size: 13px; color: var(--text-0);
 }
-.poll-option-pct {
-  font-weight: 700;
-  font-size: 12px;
-  opacity: 0.85;
-  flex-shrink: 0;
-}
-.poll-meta {
-  font-size: 11px;
-  color: var(--text-3);
-  margin-top: 8px;
-}
+.poll-option-pct { font-weight: 700; font-size: 12px; opacity: 0.85; flex-shrink: 0; }
+.poll-meta { font-size: 11px; color: var(--text-3); margin-top: 8px; }
 .poll-checkbox {
   display: inline-block;
-  width: 14px;
-  height: 14px;
+  width: 14px; height: 14px;
   border-radius: 4px;
   border: 2px solid currentColor;
   margin-right: 8px;
@@ -1257,11 +982,15 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
   opacity: 1;
 }
 
-/* ---------- Публичный/приватный канал — бейдж ---------- */
+/* ---------- Read receipts ---------- */
+.msg-status { display: inline-flex; align-items: center; margin-left: 4px; font-size: 11px; line-height: 1; }
+.msg-status .check { color: rgba(255,255,255,0.6); transition: color 0.2s; }
+.msg-status.read .check { color: #7fffd4; }
+
+/* ---------- Channel badge ---------- */
 .channel-badge {
   display: inline-block;
-  font-size: 10px;
-  font-weight: 700;
+  font-size: 10px; font-weight: 700;
   padding: 1px 6px;
   border-radius: 6px;
   margin-left: 6px;
@@ -1269,19 +998,12 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
-.channel-badge.public {
-  background: rgba(61,220,132,0.15);
-  color: var(--success);
-}
-.channel-badge.private {
-  background: rgba(255,181,71,0.15);
-  color: var(--warning);
-}
+.channel-badge.public { background: rgba(61,220,132,0.15); color: var(--success); }
+.channel-badge.private { background: rgba(255,181,71,0.15); color: var(--warning); }
 
-/* ---------- Поле с префиксом @ ---------- */
+/* ---------- Input with prefix ---------- */
 .input-prefix {
-  display: flex;
-  align-items: center;
+  display: flex; align-items: center;
   background: var(--bg-2);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -1296,17 +1018,13 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
   user-select: none;
 }
 .input-prefix input {
-  border: none;
-  background: transparent;
-  border-radius: 0;
+  border: none; background: transparent; border-radius: 0;
 }
 .input-prefix input:focus { box-shadow: none; }
 
-/* ---------- Ссылка-поделиться ---------- */
+/* ---------- Share row ---------- */
 .share-row {
-  display: flex;
-  gap: 8px;
-  align-items: center;
+  display: flex; gap: 8px; align-items: center;
   padding: 10px 12px;
   background: var(--bg-2);
   border: 1px solid var(--border);
@@ -1319,65 +1037,25 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
   font-size: 12px;
   color: var(--accent);
   user-select: all;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   cursor: pointer;
 }
 .share-row .share-link:hover { text-decoration: underline; }
 
-/* ---------- Список сессий ---------- */
+/* ---------- Sessions ---------- */
 .session-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 12px;
+  display: flex; justify-content: space-between; align-items: center; gap: 12px;
   padding: 12px 0;
   border-bottom: 1px solid var(--border);
 }
 .session-row:last-child { border-bottom: none; }
 .session-info { flex: 1; min-width: 0; }
-.session-ua {
-  font-size: 13px;
-  color: var(--text-0);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.session-date {
-  font-size: 11px;
-  color: var(--text-3);
-  margin-top: 2px;
-}
-.session-current {
-  font-size: 10px;
-  font-weight: 700;
-  color: var(--success);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
+.session-ua { font-size: 13px; color: var(--text-0); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.session-date { font-size: 11px; color: var(--text-3); margin-top: 2px; }
 
-/* ---------- Системные сообщения ---------- */
-.msg-row.system {
-  justify-content: center;
-  max-width: 90%;
-  margin: 6px auto;
-}
-.msg-row.system .msg-bubble {
-  background: rgba(255,255,255,0.05);
-  border-color: transparent;
-  color: var(--text-3);
-  font-size: 12px;
-  padding: 6px 14px;
-  border-radius: 14px;
-  text-align: center;
-}
-
-/* ---------- Переключатель аккаунтов ---------- */
+/* ---------- Accounts ---------- */
 .account-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  display: flex; align-items: center; gap: 12px;
   padding: 12px;
   border-radius: 12px;
   cursor: pointer;
@@ -1394,39 +1072,191 @@ input::placeholder, textarea::placeholder { color: var(--text-3); }
 .account-name { font-weight: 700; color: var(--text-0); font-size: 14px; }
 .account-id { font-family: ui-monospace, monospace; font-size: 11px; color: var(--text-3); margin-top: 2px; }
 .account-badge {
-  font-size: 10px;
-  font-weight: 700;
-  padding: 2px 8px;
-  border-radius: 8px;
-  background: var(--success);
-  color: #fff;
+  font-size: 10px; font-weight: 700;
+  padding: 2px 8px; border-radius: 8px;
+  background: var(--success); color: #fff;
   text-transform: uppercase;
 }
 
-/* ---------- Обложка профиля (кастомная) ---------- */
-.profile-cover {
-  position: relative;
-  background-size: cover;
-  background-position: center;
+/* ============================================================
+   Модальные окна
+   ============================================================ */
+.nx-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9000;
+  padding: 24px;
+  animation: nxFadeIn 0.2s ease;
 }
-.profile-cover-edit {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  background: rgba(0,0,0,0.6);
-  color: #fff;
-  font-size: 12px;
-  cursor: pointer;
-  transition: background 0.15s;
-  backdrop-filter: blur(10px);
+.nx-modal {
+  background: var(--bg-1);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.7);
+  width: 100%;
+  max-width: 560px;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: nxScaleIn 0.24s cubic-bezier(.4,0,.2,1);
 }
-.profile-cover-edit:hover { background: rgba(0,0,0,0.85); }
+.nx-modal-wide { max-width: 720px; }
+.nx-modal-narrow { max-width: 420px; }
+.nx-modal-header {
+  display: flex; align-items: center; gap: 12px;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(180deg, rgba(124,92,255,0.06), transparent);
+  flex-shrink: 0;
+}
+.nx-modal-title {
+  flex: 1; font-size: 17px; font-weight: 800;
+  color: var(--text-0); letter-spacing: 0.2px;
+}
+.nx-modal-close {
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  color: var(--text-2); font-size: 20px;
+  display: inline-flex; align-items: center; justify-content: center;
+  transition: background 0.2s, color 0.2s;
+}
+.nx-modal-close:hover { background: var(--bg-2); color: var(--text-0); }
+.nx-modal-body {
+  flex: 1; overflow-y: auto;
+  padding: 22px 24px;
+  overscroll-behavior: contain;
+}
+.nx-modal-footer {
+  display: flex; gap: 10px; justify-content: flex-end;
+  padding: 16px 24px;
+  border-top: 1px solid var(--border);
+  background: var(--bg-1);
+  flex-shrink: 0;
+}
+.nx-modal-body .settings-section {
+  background: var(--bg-2);
+  border-color: var(--border);
+  margin-bottom: 14px;
+}
+.nx-modal-body .settings-section:last-child { margin-bottom: 0; }
+.nx-modal-body .profile-card { margin: 0; border: none; background: transparent; padding: 0; }
+.nx-modal-body::-webkit-scrollbar { width: 8px; }
+.nx-modal-body::-webkit-scrollbar-thumb { background: var(--border-l); border-radius: 4px; }
 
-/* ---------- Мобильные фиксы ---------- */
+@keyframes nxFadeIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes nxScaleIn {
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+/* ============================================================
+   Мобильная адаптация
+   ============================================================ */
+.mobile-only { display: none; }
+
 @media (max-width: 768px) {
-  .poll-card { min-width: 0; max-width: 100%; }
-  .header-actions .icon-btn { width: 40px; height: 40px; font-size: 16px; }
+  html, body {
+    height: 100dvh !important;
+    min-height: 100dvh !important;
+    max-height: 100dvh !important;
+    overflow: hidden;
+  }
+  .app { display: block; height: 100dvh !important; position: relative; }
+  .sidebar {
+    position: absolute; inset: 0;
+    width: 100% !important;
+    height: 100dvh !important;
+    z-index: 10;
+    display: flex; flex-direction: column;
+    transition: transform 0.28s cubic-bezier(.4,0,.2,1);
+    padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  .sidebar.hidden-mobile { transform: translateX(-100%); }
+  .sidebar-list { flex: 1 1 auto; overflow-y: auto; min-height: 0; }
+  .sidebar-footer {
+    flex: 0 0 auto;
+    background: var(--bg-1);
+    border-top: 1px solid var(--border);
+    padding-bottom: calc(12px + env(safe-area-inset-bottom, 0));
+  }
+  .main { position: absolute; inset: 0; z-index: 5; }
+  .sidebar-header .icon-btn,
+  .sidebar-footer .icon-btn,
+  .chat-header .icon-btn {
+    width: 40px; height: 40px;
+    font-size: 16px;
+  }
   .header-actions { gap: 0; }
+  .chat-header { padding: 10px 12px; gap: 8px; }
+  .chat-header-name { font-size: 14px; }
+  .chat-header-sub { font-size: 11px; }
+  .avatar-md { width: 38px; height: 38px; font-size: 15px; }
+  .mobile-only { display: inline-flex; }
+  .messages { padding: 12px 10px; gap: 4px; }
+  .msg-row { max-width: 88%; }
+  .msg-bubble { padding: 8px 12px; font-size: 14px; border-radius: 14px; }
+  .msg-image, .msg-video { max-width: 100%; max-height: 60vh; }
+  .composer { padding: 8px; gap: 4px; }
+  .composer textarea { font-size: 15px; padding: 10px 12px; }
+  .composer .icon-btn { width: 38px; height: 38px; font-size: 17px; }
+  .send-btn { width: 44px; height: 44px; font-size: 18px; padding: 0; }
+  .sidebar-header { padding: 12px 14px; }
+  .brand { font-size: 16px; letter-spacing: 2px; }
+  .sidebar-search { padding: 8px 12px; }
+  .sidebar-search input { padding: 10px 12px; font-size: 14px; }
+  .sidebar-tabs { padding: 6px 8px 0; }
+  .tab { padding: 8px 6px; font-size: 12px; }
+  .sidebar-list { padding: 6px; }
+  .list-item { padding: 10px 12px; }
+  .list-item-title { font-size: 14px; }
+  .list-item-sub { font-size: 12px; }
+  .settings-section { padding: 16px; }
+  .settings-row-label { font-size: 13px; }
+  .settings-row-desc { font-size: 11px; }
+  .profile-hero .avatar-xl { width: 88px; height: 88px; font-size: 32px; }
+  .profile-hero-name { font-size: 18px; }
+  .poll-card { min-width: 0; max-width: 100%; }
+  .picker { left: 6px; right: 6px; height: 340px; }
+  .picker-body { grid-template-columns: repeat(7, 1fr); padding: 8px; }
+  .picker-body.stickers { grid-template-columns: repeat(3, 1fr); }
+  #toast-container { top: 10px; right: 10px; left: 10px; max-width: none; }
+  .auth-card { padding: 28px 20px; }
+  .auth-logo { font-size: 28px; }
+  .profile-cover { margin: -16px -16px 0 -16px; height: 100px; }
+  .profile-avatar-wrap { margin-top: -45px; }
+
+  .nx-modal-backdrop { padding: 0; align-items: flex-end; }
+  .nx-modal {
+    max-width: 100%;
+    max-height: 92dvh;
+    border-radius: 22px 22px 0 0;
+    animation: nxSlideUp 0.28s cubic-bezier(.4,0,.2,1);
+  }
+  .nx-modal-header { padding: 16px 18px; }
+  .nx-modal-body {
+    padding: 18px 18px;
+    padding-bottom: calc(18px + env(safe-area-inset-bottom, 0));
+  }
+  .nx-modal-footer {
+    padding: 14px 18px;
+    padding-bottom: calc(14px + env(safe-area-inset-bottom, 0));
+  }
+  .nx-modal-footer .btn { flex: 1; }
+  @keyframes nxSlideUp {
+    from { transform: translateY(100%); opacity: 0.4; }
+    to { transform: translateY(0); opacity: 1; }
+  }
+}
+
+@media (max-width: 380px) {
+  .msg-row { max-width: 92%; }
+  .chat-header { padding: 8px; }
+  .profile-actions { grid-template-columns: 1fr; }
 }
