@@ -1,5 +1,5 @@
 /* ============================================================
-   NEXORA v6.0 — единый app.js
+   NEXORA v7.0 — единый app.js
    ============================================================ */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
@@ -63,22 +63,14 @@ function formatDateLabel(iso) {
   return d.toLocaleDateString([], { day: "numeric", month: "long", year: "numeric" });
 }
 function formatDateTime(iso) {
-  try {
-    const d = new Date(iso);
-    return d.toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
-  } catch { return ""; }
+  try { return new Date(iso).toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }); }
+  catch { return ""; }
 }
 function humanSize(n) {
   if (!n) return "0 B";
   const u = ["B", "KB", "MB", "GB"]; let i = 0; let v = n;
   while (v >= 1024 && i < u.length - 1) { v /= 1024; i++; }
   return `${v >= 10 || i === 0 ? v.toFixed(0) : v.toFixed(1)} ${u[i]}`;
-}
-function randomToken(len = 12) {
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  let s = "";
-  for (let i = 0; i < len; i++) s += chars[Math.floor(Math.random() * chars.length)];
-  return s;
 }
 
 function renderMarkdown(raw) {
@@ -180,7 +172,6 @@ function svgEmoji(e) {
   return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
 }
 
-/* Sound */
 class SoundEngine {
   constructor() {
     this.ctx = null;
@@ -239,7 +230,6 @@ class SoundEngine {
 }
 const Sounds = new SoundEngine();
 
-/* Bot commands */
 const BOT_COMMANDS = {
   "/help": "Доступные команды:\n/newbot — создать своего бота\n/mybots — список моих ботов\n/time — текущее время\n/roll 6 — случайное число от 1 до N\n/echo текст — вернуть текст\n/ping — pong",
   "/ping": "pong 🏓",
@@ -277,6 +267,8 @@ class NEXORA {
     this.realtimeChannel = null;
     this.typingChannel = null;
     this.pollsChannel = null;
+    this.readsChannel = null;
+    this.notificationChatId = null;
     this.pollTimer = null;
     this.presenceTimer = null;
     this.typingSelfTimeout = null;
@@ -288,6 +280,7 @@ class NEXORA {
     this._activeBotCommands = [];
     this._swRegistration = null;
     this._openModal = null;
+    this._escHandler = null;
 
     this.bindGlobalEvents();
   }
@@ -308,7 +301,6 @@ class NEXORA {
      ============================================================ */
   openModal({ title, body, footer, narrow = false, wide = false }) {
     this.closeModal();
-
     const backdrop = document.createElement("div");
     backdrop.className = "nx-modal-backdrop";
 
@@ -337,14 +329,9 @@ class NEXORA {
     document.body.appendChild(backdrop);
 
     header.querySelector(".nx-modal-close").addEventListener("click", () => this.closeModal());
+    backdrop.addEventListener("click", (e) => { if (e.target === backdrop) this.closeModal(); });
 
-    backdrop.addEventListener("click", (e) => {
-      if (e.target === backdrop) this.closeModal();
-    });
-
-    this._escHandler = (e) => {
-      if (e.key === "Escape") this.closeModal();
-    };
+    this._escHandler = (e) => { if (e.key === "Escape") this.closeModal(); };
     document.addEventListener("keydown", this._escHandler);
 
     this._openModal = { backdrop, modal, bodyEl, footerEl: modal.querySelector(".nx-modal-footer") };
@@ -356,7 +343,6 @@ class NEXORA {
       if (typeof footer === "function") footer(this._openModal.footerEl, this._openModal);
       else if (typeof footer === "string") this._openModal.footerEl.innerHTML = footer;
     }
-
     return this._openModal;
   }
 
@@ -372,15 +358,13 @@ class NEXORA {
   }
 
   /* ============================================================
-     ACCOUNTS (multi-account)
+     ACCOUNTS
      ============================================================ */
   loadAccounts() {
     try { return JSON.parse(localStorage.getItem(ACCOUNTS_KEY) || "[]"); }
     catch { return []; }
   }
-  saveAccounts(list) {
-    localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(list));
-  }
+  saveAccounts(list) { localStorage.setItem(ACCOUNTS_KEY, JSON.stringify(list)); }
   rememberAccount({ id, username, nexora_id, avatar_url }) {
     const list = this.loadAccounts().filter(a => a.id !== id);
     list.unshift({ id, username, nexora_id, avatar_url, added_at: Date.now() });
@@ -404,7 +388,6 @@ class NEXORA {
           p.textContent = "Нет сохранённых аккаунтов";
           body.appendChild(p);
         }
-
         accounts.forEach(a => {
           const row = document.createElement("div");
           row.className = "account-row" + (a.id === this.user?.id ? " current" : "");
@@ -421,7 +404,6 @@ class NEXORA {
               this.closeModal();
               await this.switchAccount(a.id);
             });
-
             const rm = document.createElement("button");
             rm.className = "btn btn-ghost";
             rm.style.marginLeft = "6px";
@@ -434,11 +416,9 @@ class NEXORA {
             });
             row.appendChild(rm);
           }
-
           body.appendChild(row);
         });
 
-        // Кнопка «Добавить аккаунт» — выход и логин под другим
         const add = document.createElement("button");
         add.className = "btn btn-primary btn-block";
         add.style.marginTop = "14px";
@@ -457,7 +437,6 @@ class NEXORA {
         });
         body.appendChild(add);
 
-        // «Выйти из всех аккаунтов»
         if (accounts.length > 1) {
           const clear = document.createElement("button");
           clear.className = "btn btn-danger btn-block";
@@ -477,7 +456,6 @@ class NEXORA {
   async switchAccount(accountId) {
     if (!confirm("Переключиться на этот аккаунт? Текущий сеанс завершится.")) return;
     try {
-      // Запоминаем текущий
       if (this.user && this.profile) {
         this.rememberAccount({
           id: this.user.id,
@@ -486,7 +464,6 @@ class NEXORA {
           avatar_url: this.profile.avatar_url,
         });
       }
-      // Выход
       try { await this.setOnline(false); } catch (_) {}
       await supabase.auth.signOut();
       this.stopRealtime();
@@ -496,7 +473,6 @@ class NEXORA {
       this.chats = []; this.contacts = [];
       this.showScreen("screen-auth");
       this.showAuthCard("login");
-      // Подставляем username прошлого аккаунта, чтобы было удобнее
       const acc = this.loadAccounts().find(a => a.id === accountId);
       if (acc) {
         $("login-username").value = acc.username;
@@ -524,6 +500,13 @@ class NEXORA {
             nexora_id: this.profile.nexora_id,
             avatar_url: this.profile.avatar_url,
           });
+          // Логируем восстановление сессии
+          try {
+            await supabase.rpc("log_login_event", {
+              user_agent: navigator.userAgent || "",
+              ip: null,
+            });
+          } catch (_) {}
           return this.enterApp();
         }
       }
@@ -534,9 +517,8 @@ class NEXORA {
 
   async registerServiceWorker() {
     if (!("serviceWorker" in navigator)) return;
-    try {
-      this._swRegistration = await navigator.serviceWorker.register("./sw.js");
-    } catch (e) { console.warn("SW reg failed:", e); }
+    try { this._swRegistration = await navigator.serviceWorker.register("./sw.js"); }
+    catch (e) { console.warn("SW reg failed:", e); }
   }
 
   async requestNotificationPermission() {
@@ -657,6 +639,13 @@ class NEXORA {
           avatar_url: this.profile.avatar_url,
         });
       }
+      // Логируем вход
+      try {
+        await supabase.rpc("log_login_event", {
+          user_agent: navigator.userAgent || "",
+          ip: null,
+        });
+      } catch (_) {}
       toast("Добро пожаловать!", "success");
       Sounds.success();
       this.enterApp();
@@ -695,6 +684,12 @@ class NEXORA {
           avatar_url: this.profile.avatar_url,
         });
       }
+      try {
+        await supabase.rpc("log_login_event", {
+          user_agent: navigator.userAgent || "",
+          ip: null,
+        });
+      } catch (_) {}
       toast("Проверено", "success");
       Sounds.success();
       this.enterApp();
@@ -775,6 +770,10 @@ class NEXORA {
     this.requestNotificationPermission();
 
     try { await supabase.rpc("get_or_create_saved_chat"); } catch (_) {}
+    try {
+      const { data } = await supabase.rpc("get_or_create_notification_chat");
+      this.notificationChatId = data;
+    } catch (_) {}
 
     await this.refreshChats();
     await this.refreshContacts();
@@ -789,7 +788,6 @@ class NEXORA {
     $("welcome").classList.remove("hidden");
     this.updatePageTitle();
 
-    // Deep link: ?c=@channel или ?u=NXR-XXXXXX
     this.handleDeepLink();
   }
 
@@ -813,7 +811,6 @@ class NEXORA {
     } catch (e) { this.reads = {}; }
   }
   async loadReadsByOther() {
-    // Для каждого чата берём последнее прочтение собеседников
     try {
       const { data: mem } = await supabase.from("chat_members")
         .select("chat_id").eq("user_id", this.user.id);
@@ -843,7 +840,6 @@ class NEXORA {
       if (!peerRead) return false;
       return new Date(peerRead) >= new Date(m.created_at);
     }
-    // группы/каналы — считаем «прочитано», если прочитал хотя бы один
     const map = this.readsByOther?.[this.activeChat.id] || {};
     const times = Object.values(map);
     if (!times.length) return false;
@@ -855,8 +851,7 @@ class NEXORA {
     this.reads[chatId] = iso;
     try {
       await supabase.from("chat_reads").upsert({
-        user_id: this.user.id, chat_id: chatId, last_read_at: iso,
-        updated_at: iso,
+        user_id: this.user.id, chat_id: chatId, last_read_at: iso, updated_at: iso,
       });
     } catch (_) {}
     this.updatePageTitle();
@@ -866,7 +861,7 @@ class NEXORA {
     const last = chat.last_message;
     if (!last) return 0;
     if (chat.type === "saved") return 0;
-    if (chat.type === "system") return 0;
+    if (chat.is_notification) return 0;
     if (!lastRead) return last.is_own ? 0 : 1;
     if (last.is_own) return 0;
     return new Date(last.created_at) > new Date(lastRead) ? 1 : 0;
@@ -907,20 +902,24 @@ class NEXORA {
       const div = document.createElement("div");
       div.className = "list-item" + (this.activeChat?.id === chat.id ? " active" : "");
       if (chat.type === "saved") div.dataset.saved = "1";
+      if (chat.is_notification) div.dataset.notif = "1";
 
       const peer = chat.peer || {};
       let title;
-      if (chat.type === "saved") title = "Избранное";
+      if (chat.is_notification) title = "NEXORA";
+      else if (chat.type === "saved") title = "Избранное";
       else title = peer.nickname || chat.display_title || peer.username || chat.title || "Chat";
 
       const last = chat.last_message;
       const unread = this.unreadCountFor(chat);
 
-      let sub = chat.type === "saved" ? "Твои сохранённые сообщения" : "Нет сообщений";
+      let sub = chat.type === "saved" ? "Твои сохранённые сообщения" :
+                chat.is_notification ? "Уведомления о входах" : "Нет сообщений";
       if (last) {
         const icon = {
           image: "🖼️ ", video: "🎬 ", file: "📎 ",
-          sticker: "🎨 ", voice: "🎤 ", gif: "🎞️ ", poll: "📊 ",
+          sticker: "🎨 ", voice: "🎤 ", gif: "🎞️ ",
+          poll: "📊 ", auth: "🔐 ",
         }[last.kind] || "";
         sub = (last.is_own ? "Ты: " : "") + icon + (last.content || "").slice(0, 60);
       }
@@ -929,16 +928,21 @@ class NEXORA {
       if (typers.length) sub = `<em>${escapeHtml(typers.map(t => t.name).join(", "))} печатает…</em>`;
 
       let badge = "";
-      if (chat.type === "channel") badge = "📢 ";
+      if (chat.is_notification) badge = "📩 ";
+      else if (chat.type === "channel") badge = "📢 ";
       else if (chat.type === "group") badge = "👥 ";
       else if (chat.type === "saved") badge = "⭐ ";
 
       const botBadge = peer.is_bot ? ' <span class="bot-badge">[BOT]</span>' : "";
-      const avatarUser = chat.type === "saved" ? { username: "★" } : peer;
+      const avatarUser = chat.type === "saved" && !chat.is_notification
+        ? { username: "★" }
+        : chat.is_notification
+          ? { username: "N" }
+          : peer;
 
       let chanTag = "";
-      if (chat.type === "channel" && chat.username) {
-        chanTag = `<span class="channel-badge ${chat.is_public ? "public" : "private"}">${chat.is_public ? "public" : "private"}</span>`;
+      if ((chat.type === "channel" || chat.type === "group") && chat.username) {
+        chanTag = `<span class="channel-badge ${chat.is_public ? "public" : "private"}">@${escapeHtml(chat.username)}</span>`;
       }
 
       div.innerHTML = `
@@ -974,15 +978,19 @@ class NEXORA {
       menu.appendChild(b);
     };
 
-    if (chat.type === "saved") {
+    if (chat.is_notification) {
+      mk("🎨 Тема чата", () => this.openChatThemeDialog(chat));
+    } else if (chat.type === "saved") {
       mk("🎨 Тема чата", () => this.openChatThemeDialog(chat));
     } else {
       mk("✓ Отметить прочитанным", () => this.markChatRead(chat.id));
       if (chat.type === "direct" && chat.peer) {
         mk("👤 Открыть профиль", () => this.openUserProfile(chat.peer.id, chat.peer));
       }
-      if (chat.type === "channel" && (chat.my_role === "owner" || chat.my_role === "admin")) {
-        mk("⚙ Настройки канала", () => this.openChannelSettings(chat));
+      if ((chat.type === "channel" || chat.type === "group") &&
+          (chat.my_role === "owner" || chat.my_role === "admin")) {
+        mk(chat.type === "channel" ? "⚙ Настройки канала" : "⚙ Настройки группы",
+          () => chat.type === "channel" ? this.openChannelSettings(chat) : this.openGroupSettings(chat));
         mk("🔗 Поделиться ссылкой", () => this.openChannelShare(chat));
       }
       mk("🎨 Тема чата", () => this.openChatThemeDialog(chat));
@@ -997,8 +1005,12 @@ class NEXORA {
   }
 
   async hideChatForMe(chat) {
-    if (chat.type === "saved") {
+    if (chat.type === "saved" && !chat.is_notification) {
       toast("Чат «Избранное» нельзя удалить", "warning");
+      return;
+    }
+    if (chat.is_notification) {
+      toast("Служебный чат NEXORA нельзя удалить", "warning");
       return;
     }
     if (!confirm(`Удалить чат «${chat.display_title}» только у себя?\nСобеседник ничего не заметит.`)) return;
@@ -1132,13 +1144,11 @@ class NEXORA {
   }
 
   /* ============================================================
-     SEARCH (users + channels)
+     SEARCH
      ============================================================ */
   async searchUser(query) {
     const q = (query || "").trim();
     if (!q) return;
-
-    // Если начинается с @ — ищем канал
     if (q.startsWith("@")) return this.searchChannel(q.slice(1));
 
     const list = $("sidebar-list");
@@ -1148,7 +1158,6 @@ class NEXORA {
       if (error) throw error;
       list.innerHTML = "";
       if (!data || !data.length) {
-        // Может, это канал?
         const ch = await this.tryFindChannel(q);
         if (ch) return this.renderChannelResult(ch, list);
         list.innerHTML = `<div class="empty-state">Никого не нашёл: ${escapeHtml(q)}<br><small>ID, ник или @канал</small></div>`;
@@ -1204,8 +1213,9 @@ class NEXORA {
     card.className = "user-card";
     const pubTag = ch.is_public ? "public" : "private";
     const unameLine = ch.username ? `@${escapeHtml(ch.username)}` : "(приватный)";
+    const kind = ch.type === "group" ? "👥" : "📢";
     card.innerHTML = `
-      <div class="avatar avatar-md">📢</div>
+      <div class="avatar avatar-md">${kind}</div>
       <div class="user-card-body">
         <div class="user-card-name">
           ${escapeHtml(ch.title)}
@@ -1218,13 +1228,21 @@ class NEXORA {
       if (ch.already_member) {
         await this.refreshChats();
         await this.openChatById(ch.id);
-      } else {
-        if (!ch.is_public) {
-          toast("Приватный канал — нужна ссылка-приглашение", "warning");
-          return;
-        }
+      } else if (ch.is_public) {
         try {
           const { error } = await supabase.rpc("join_channel", { p_chat_id: ch.id });
+          if (error) throw error;
+          toast("Присоединились", "success");
+          Sounds.success();
+          await this.refreshChats();
+          await this.openChatById(ch.id);
+        } catch (e) { toast(e.message || "Ошибка", "error"); }
+      } else {
+        // Приватный: join через прямое вступление (ссылка-приглашение уже подтверждена)
+        try {
+          const { error } = await supabase.from("chat_members").insert({
+            chat_id: ch.id, user_id: this.user.id, role: "member",
+          });
           if (error) throw error;
           toast("Присоединились", "success");
           Sounds.success();
@@ -1246,16 +1264,12 @@ class NEXORA {
         .select("contact_id, profile:profiles!contacts_contact_id_fkey(*)")
         .eq("owner_id", this.user.id);
       if (error) throw error;
-
       let nickMap = {};
       try {
         const { data: nicks } = await supabase
-          .from("contact_nicknames")
-          .select("contact_id, nickname")
-          .eq("owner_id", this.user.id);
+          .from("contact_nicknames").select("contact_id, nickname").eq("owner_id", this.user.id);
         (nicks || []).forEach(n => { nickMap[n.contact_id] = n.nickname; });
       } catch (_) {}
-
       this.contacts = (data || []).map(r => {
         const p = r.profile;
         if (!p) return null;
@@ -1283,9 +1297,7 @@ class NEXORA {
   async refreshChats() {
     try {
       const { data: mem } = await supabase
-        .from("chat_members")
-        .select("chat_id, hidden_until")
-        .eq("user_id", this.user.id);
+        .from("chat_members").select("chat_id, hidden_until").eq("user_id", this.user.id);
       const visible = (mem || []).filter(m => !m.hidden_until);
       const ids = visible.map(m => m.chat_id);
       if (!ids.length) {
@@ -1295,11 +1307,12 @@ class NEXORA {
         return;
       }
 
-      const [{ data: chats }, { data: members }, { data: msgs }, { data: nicks }] = await Promise.all([
+      const [{ data: chats }, { data: members }, { data: msgs }, { data: nicks }, { data: notifs }] = await Promise.all([
         supabase.from("chats").select("id, is_group, title, type, description, avatar_url, updated_at, owner_id, username, is_public, invite_token").in("id", ids),
         supabase.from("chat_members").select("chat_id, user_id, role, profile:profiles!chat_members_user_id_fkey(id, username, nexora_id, avatar_url, is_online, show_online, is_bot)").in("chat_id", ids),
         supabase.from("messages").select("chat_id, content, kind, created_at, sender_id, pinned").in("chat_id", ids).order("created_at", { ascending: false }).limit(300),
         supabase.from("contact_nicknames").select("contact_id, nickname").eq("owner_id", this.user.id),
+        supabase.from("notification_chats").select("chat_id").eq("user_id", this.user.id),
       ]);
 
       const lastBy = {};
@@ -1307,6 +1320,8 @@ class NEXORA {
 
       const nickMap = {};
       (nicks || []).forEach(n => { nickMap[n.contact_id] = n.nickname; });
+
+      const notifIds = new Set((notifs || []).map(n => n.chat_id));
 
       this.chats = (chats || []).map(c => {
         const mems = (members || []).filter(m => m.chat_id === c.id);
@@ -1318,7 +1333,8 @@ class NEXORA {
         const ctype = c.type || (c.is_group ? "group" : "direct");
 
         let display;
-        if (ctype === "saved") display = "Избранное";
+        if (ctype === "saved" && notifIds.has(c.id)) display = "NEXORA";
+        else if (ctype === "saved") display = "Избранное";
         else display = peer ? (peer.nickname || peer.username) : (c.title || "Chat");
 
         return {
@@ -1329,6 +1345,7 @@ class NEXORA {
           updated_at: c.updated_at, my_role: myMem?.role || "member",
           peer, display_title: display,
           members_count: mems.length,
+          is_notification: notifIds.has(c.id),
           last_message: last ? {
             content: last.content || "",
             kind: last.kind || "text",
@@ -1337,8 +1354,10 @@ class NEXORA {
           } : null,
         };
       }).sort((a, b) => {
-        if (a.type === "saved" && b.type !== "saved") return -1;
-        if (b.type === "saved" && a.type !== "saved") return 1;
+        // Служебные чаты сверху: NEXORA, затем Избранное
+        const rankA = a.is_notification ? 0 : a.type === "saved" ? 1 : 2;
+        const rankB = b.is_notification ? 0 : b.type === "saved" ? 1 : 2;
+        if (rankA !== rankB) return rankA - rankB;
         const ta = a.last_message?.created_at || a.updated_at || "";
         const tb = b.last_message?.created_at || b.updated_at || "";
         return new Date(tb) - new Date(ta);
@@ -1384,17 +1403,27 @@ class NEXORA {
       await this.refreshChats();
       let chat = this.chats.find(c => c.id === data);
       if (!chat) {
-        chat = {
-          id: data, type: "saved",
-          display_title: "Избранное",
-          members_count: 1, my_role: "owner",
-        };
+        chat = { id: data, type: "saved", display_title: "Избранное", members_count: 1, my_role: "owner" };
       }
       this.openChat(chat);
     } catch (e) {
       console.error(e);
       toast("Не удалось открыть Избранное", "error");
     }
+  }
+
+  async openNotificationChat() {
+    try {
+      const { data, error } = await supabase.rpc("get_or_create_notification_chat");
+      if (error) throw error;
+      this.notificationChatId = data;
+      await this.refreshChats();
+      let chat = this.chats.find(c => c.id === data);
+      if (!chat) {
+        chat = { id: data, type: "saved", is_notification: true, display_title: "NEXORA", members_count: 1, my_role: "owner" };
+      }
+      this.openChat(chat);
+    } catch (e) { toast("Не удалось открыть уведомления", "error"); }
   }
 
   async openChat(chat) {
@@ -1409,36 +1438,44 @@ class NEXORA {
     const ctype = chat.type || "direct";
 
     let badge = "";
-    if (ctype === "channel") badge = "📢 ";
+    if (chat.is_notification) badge = "📩 ";
+    else if (ctype === "channel") badge = "📢 ";
     else if (ctype === "group") badge = "👥 ";
     else if (ctype === "saved") badge = "⭐ ";
 
     const botTag = chat.peer?.is_bot ? ' <span class="bot-badge">[BOT]</span>' : "";
 
     let title;
-    if (ctype === "saved") title = "Избранное";
+    if (chat.is_notification) title = "NEXORA";
+    else if (ctype === "saved") title = "Избранное";
     else title = chat.peer?.nickname || chat.display_title;
 
     let chanTag = "";
-    if (ctype === "channel" && chat.username) {
+    if ((ctype === "channel" || ctype === "group") && chat.username) {
       chanTag = `<span class="channel-badge ${chat.is_public ? "public" : "private"}">@${escapeHtml(chat.username)}</span>`;
     }
 
     $("chat-peer-name").innerHTML = `${escapeHtml(badge + title)}${botTag}${chanTag}
       <span class="online-dot${this.isPeerOnline(chat) ? " online" : ""}"></span>`;
 
-    if (ctype === "saved") {
+    if (chat.is_notification) {
+      $("chat-peer-sub").textContent = "Уведомления о входах в аккаунт";
+    } else if (ctype === "saved") {
       $("chat-peer-sub").textContent = "Твои сохранённые сообщения";
     } else if (ctype === "channel") {
       $("chat-peer-sub").textContent = `${chat.is_public ? "публичный" : "приватный"} канал · ${chat.members_count || 0} подписчиков`;
+    } else if (ctype === "group") {
+      $("chat-peer-sub").textContent = `${chat.is_public ? "публичная" : "приватная"} группа · ${chat.members_count || 0} участников`;
     } else {
       $("chat-peer-sub").textContent = chat.peer?.nexora_id ||
         (chat.members_count ? `${chat.members_count} участников` : "");
     }
 
-    paintAvatar($("chat-peer-avatar"), ctype === "saved"
+    paintAvatar($("chat-peer-avatar"), chat.type === "saved" && !chat.is_notification
       ? { username: "★" }
-      : (chat.peer || { username: chat.display_title }));
+      : chat.is_notification
+        ? { username: "N" }
+        : (chat.peer || { username: chat.display_title }));
 
     const blocked = ctype === "channel" && !["owner", "admin"].includes(chat.my_role);
     $("composer").disabled = blocked;
@@ -1463,15 +1500,24 @@ class NEXORA {
     if (chat.peer?.is_bot) {
       try {
         const { data } = await supabase
-          .from("custom_bots")
-          .select("commands")
-          .eq("bot_user_id", chat.peer.id)
-          .maybeSingle();
+          .from("custom_bots").select("commands").eq("bot_user_id", chat.peer.id).maybeSingle();
         if (data?.commands) this._activeBotCommands = data.commands;
       } catch (_) {}
     }
 
     this.renderMessages();
+
+    // Большая кнопка «Создать бота» для HelperBot
+    if (chat.peer?.username?.toLowerCase() === "helperbot" && !this.messages.length) {
+      const box = $("messages");
+      const big = document.createElement("button");
+      big.className = "btn btn-primary";
+      big.style.cssText = "margin:20px auto;display:block;padding:14px 22px;font-size:15px";
+      big.textContent = "🤖 Создать бота";
+      big.addEventListener("click", () => this.openBotFather());
+      box.appendChild(big);
+    }
+
     await this.checkStrangerBanner();
     this.subscribeChat(chat.id);
     this.subscribeTyping(chat.id);
@@ -1528,14 +1574,10 @@ class NEXORA {
       (data || []).forEach(p => {
         if (p.message_id) map[p.message_id] = { ...p, votes: {} };
       });
-
-      // Подтянем голоса
       const pollIds = (data || []).map(p => p.id);
       if (pollIds.length) {
         const { data: votes } = await supabase
-          .from("poll_votes")
-          .select("poll_id, user_id, option_indices")
-          .in("poll_id", pollIds);
+          .from("poll_votes").select("poll_id, user_id, option_indices").in("poll_id", pollIds);
         (votes || []).forEach(v => {
           const poll = Object.values(map).find(p => p.id === v.poll_id);
           if (poll) poll.votes[v.user_id] = v.option_indices || [];
@@ -1553,9 +1595,9 @@ class NEXORA {
     if (!bar) return;
     bar.classList.add("hidden");
     bar.innerHTML = "";
-
     if (!this.activeChat) return;
     if (this.activeChat.type === "saved") return;
+    if (this.activeChat.is_notification) return;
     if (this.activeChat.type !== "direct") return;
 
     const peer = this.activeChat.peer;
@@ -1618,15 +1660,12 @@ class NEXORA {
   renderMessages() {
     const box = $("messages");
     box.innerHTML = "";
-
     if (!this.messages.length) {
       box.innerHTML = `<div class="empty-state">Нет сообщений. Напиши первое!</div>`;
       return;
     }
-
     this.visibleStart = Math.max(0, this.messages.length - this.virtualWindow);
     this.paintMessageWindow();
-
     box.removeEventListener("scroll", this._onScrollHandler || (() => {}));
     this._onScrollHandler = () => {
       if (box.scrollTop < 80 && this.visibleStart > 0) {
@@ -1637,14 +1676,12 @@ class NEXORA {
       }
     };
     box.addEventListener("scroll", this._onScrollHandler);
-
     if (this.messageSearchQuery) this.highlightSearch();
   }
 
   paintMessageWindow() {
     const box = $("messages");
     box.innerHTML = "";
-
     const slice = this.messages.slice(this.visibleStart);
     if (this.visibleStart > 0) {
       const more = document.createElement("div");
@@ -1652,7 +1689,6 @@ class NEXORA {
       more.textContent = `↑ ${this.visibleStart} старых сообщений`;
       box.appendChild(more);
     }
-
     const pinned = this.messages.filter(m => m.pinned);
     if (pinned.length) {
       const pinBar = document.createElement("div");
@@ -1664,7 +1700,6 @@ class NEXORA {
       });
       box.appendChild(pinBar);
     }
-
     let prev = null;
     slice.forEach(m => {
       const needDate = !prev || new Date(prev.created_at).toDateString() !== new Date(m.created_at).toDateString();
@@ -1686,8 +1721,7 @@ class NEXORA {
     const senderName = isOwn ? "Ты" : (sender?.username || this.activePeer?.username || "User");
     const isBot = !!sender?.is_bot;
 
-    // Системные сообщения
-    if (m.kind === "system") {
+    if (m.kind === "system" || m.kind === "auth") {
       const row = document.createElement("div");
       row.className = "msg-row system";
       row.dataset.messageId = m.id;
@@ -1734,7 +1768,6 @@ class NEXORA {
     const content = document.createElement("div");
     content.className = "msg-content";
 
-    // Опрос?
     if (m.kind === "poll" && this.polls && this.polls[m.id]) {
       this.renderPoll(bubble, this.polls[m.id], m);
     } else {
@@ -1782,12 +1815,10 @@ class NEXORA {
         clickTimer = setTimeout(() => { clickTimer = null; }, 260);
       }
     });
-
     row.addEventListener("contextmenu", (e) => {
       e.preventDefault();
       this.openMessageContextMenu(e, m, isOwn);
     });
-
     return row;
   }
 
@@ -1807,7 +1838,6 @@ class NEXORA {
     const myVote = poll.votes[this.user.id] || [];
     const totalVotes = Object.keys(poll.votes).length;
 
-    // Считаем распределение
     const counts = options.map(() => 0);
     Object.values(poll.votes).forEach(voteArr => {
       (voteArr || []).forEach(i => { if (counts[i] != null) counts[i] += 1; });
@@ -1832,7 +1862,6 @@ class NEXORA {
       optEl.addEventListener("click", async () => {
         if (poll.closed) return toast("Опрос закрыт", "warning");
         const isMultiple = poll.allows_multiple;
-
         let newVote;
         if (isMultiple) {
           newVote = new Set(myVote);
@@ -1843,12 +1872,8 @@ class NEXORA {
         } else {
           newVote = [idx];
         }
-
         try {
-          const { error } = await supabase.rpc("vote_poll", {
-            p_poll_id: poll.id,
-            p_options: newVote,
-          });
+          const { error } = await supabase.rpc("vote_poll", { p_poll_id: poll.id, p_options: newVote });
           if (error) throw error;
           poll.votes[this.user.id] = newVote;
           this.paintMessageWindow();
@@ -1866,19 +1891,14 @@ class NEXORA {
       (poll.allows_multiple ? " · несколько вариантов" : "") +
       (poll.closed ? " · закрыт" : "");
     card.appendChild(meta);
-
     bubble.appendChild(card);
   }
 
-  /* ============================================================
-     Создание опроса
-     ============================================================ */
   openPollCreator() {
     if (!this.activeChat) return;
     if (this.activeChat.type === "channel" && !["owner","admin"].includes(this.activeChat.my_role)) {
       return toast("Только админы могут создавать опросы", "warning");
     }
-
     this.openModal({
       title: "Новый опрос",
       body: (body) => {
@@ -1927,9 +1947,7 @@ class NEXORA {
           row.appendChild(inp); row.appendChild(rm);
           optsHolder.appendChild(row);
         };
-        addOpt();
-        addOpt();
-
+        addOpt(); addOpt();
         body.querySelector("#poll-add").addEventListener("click", () => addOpt());
 
         const f = this._openModal.footerEl;
@@ -1943,13 +1961,9 @@ class NEXORA {
           const errEl = body.querySelector("#poll-err");
           errEl.classList.remove("show");
           const question = body.querySelector("#poll-q").value.trim();
-          if (!question) {
-            errEl.textContent = "Введи вопрос"; errEl.classList.add("show"); return;
-          }
+          if (!question) { errEl.textContent = "Введи вопрос"; errEl.classList.add("show"); return; }
           const opts = [...optsHolder.querySelectorAll("input")].map(i => i.value.trim()).filter(Boolean);
-          if (opts.length < 2) {
-            errEl.textContent = "Нужно минимум 2 варианта"; errEl.classList.add("show"); return;
-          }
+          if (opts.length < 2) { errEl.textContent = "Нужно минимум 2 варианта"; errEl.classList.add("show"); return; }
           const isQuiz = body.querySelector("#poll-quiz").checked;
           const isAnon = body.querySelector("#poll-anon").checked;
           const isMulti = body.querySelector("#poll-multi").checked;
@@ -1967,7 +1981,7 @@ class NEXORA {
           }
 
           try {
-            const { data, error } = await supabase.rpc("create_poll", {
+            const { error } = await supabase.rpc("create_poll", {
               p_chat_id: this.activeChat.id,
               p_question: question,
               p_options: opts,
@@ -1980,7 +1994,6 @@ class NEXORA {
             toast("Опрос создан", "success");
             Sounds.success();
             this.closeModal();
-            // Добавим в локальный список сообщений (realtime тоже придёт)
             await this.loadMessages();
             await this.loadPolls();
             this.paintMessageWindow();
@@ -2124,7 +2137,7 @@ class NEXORA {
       Sounds.click();
     });
     mk("↪ Переслать", () => this.forwardMessage(msg));
-    if (this.activeChat?.type !== "saved") {
+    if (this.activeChat?.type !== "saved" && !this.activeChat?.is_notification) {
       mk("⭐ В избранное", () => this.saveToFavorites(msg));
     }
     mk(msg.pinned ? "📌 Открепить" : "📌 Закрепить", () => this.togglePin(msg));
@@ -2184,25 +2197,23 @@ class NEXORA {
 
   forwardMessage(msg) {
     const sorted = [...this.chats].sort((a, b) => {
-      const aS = a.type === "saved" ? 0 : 1;
-      const bS = b.type === "saved" ? 0 : 1;
+      const aS = a.is_notification ? 1 : a.type === "saved" ? 0 : 2;
+      const bS = b.is_notification ? 1 : b.type === "saved" ? 0 : 2;
       return aS - bS;
     });
-
     this.openModal({
       title: "Переслать в…",
       narrow: true,
       body: (body) => {
-        if (!sorted.length) {
-          body.innerHTML = `<p class="muted">У тебя пока нет чатов</p>`;
-          return;
-        }
+        if (!sorted.length) { body.innerHTML = `<p class="muted">У тебя пока нет чатов</p>`; return; }
         sorted.forEach(c => {
           const row = document.createElement("div");
           row.className = "settings-row";
           row.style.cursor = "pointer";
-          const label = c.type === "saved" ? "⭐ Избранное" : c.display_title;
-          const desc = c.type === "saved" ? "сохранённые сообщения" : c.type;
+          const label = c.is_notification ? "📩 NEXORA" :
+                        c.type === "saved" ? "⭐ Избранное" : c.display_title;
+          const desc = c.is_notification ? "уведомления" :
+                       c.type === "saved" ? "сохранённые сообщения" : c.type;
           row.innerHTML = `
             <div class="settings-row-info">
               <div class="settings-row-label">${escapeHtml(label)}</div>
@@ -2218,7 +2229,7 @@ class NEXORA {
                 file_name: msg.file_name, file_size: msg.file_size,
                 sticker_id: msg.sticker_id,
               });
-              toast(c.type === "saved" ? "Сохранено в Избранное" : "Переслано", "success");
+              toast("Переслано", "success");
               Sounds.send();
               this.closeModal();
             } catch (e) { toast(e.message || "Ошибка", "error"); }
@@ -2239,9 +2250,7 @@ class NEXORA {
     const reply = this.pendingReplyTo;
     if (!text && !att) return;
     if (!this.activeChat) return;
-
     input.value = ""; input.style.height = "auto";
-
     try {
       let payload;
       if (att) {
@@ -2270,7 +2279,6 @@ class NEXORA {
       this.hideReplyPreview();
       this.refreshChats();
       Sounds.send();
-
       this.maybeBotReply(data);
       setTimeout(() => this.checkStrangerBanner(), 200);
     } catch (e) {
@@ -2285,13 +2293,10 @@ class NEXORA {
   maybeBotReply(msg) {
     if (!this.activeChat?.peer?.is_bot) return;
     if (msg.sender_id !== this.user.id) return;
-
     const text = (msg.content || "").trim();
     if (!text.startsWith("/")) return;
-
     const [cmd, ...args] = text.split(/\s+/);
     const key = cmd.toLowerCase();
-
     if (key === "/newbot") {
       this.deliverBotReply("Открываю мастер создания бота…");
       setTimeout(() => this.openBotFather(), 300);
@@ -2302,22 +2307,15 @@ class NEXORA {
       setTimeout(() => this.openMyBots(), 300);
       return;
     }
-
     const builtin = BOT_COMMANDS[key];
     if (builtin) {
       const reply = typeof builtin === "function" ? builtin(args) : builtin;
       this.deliverBotReply(reply);
       return;
     }
-
     if (Array.isArray(this._activeBotCommands)) {
-      const custom = this._activeBotCommands.find(
-        c => (c.cmd || "").toLowerCase() === key
-      );
-      if (custom) {
-        this.deliverBotReply(custom.reply || "");
-        return;
-      }
+      const custom = this._activeBotCommands.find(c => (c.cmd || "").toLowerCase() === key);
+      if (custom) { this.deliverBotReply(custom.reply || ""); return; }
     }
   }
 
@@ -2325,8 +2323,7 @@ class NEXORA {
     if (!this.activeChat) return;
     try {
       const { data, error } = await supabase.rpc("bot_reply", {
-        p_chat_id: this.activeChat.id,
-        p_content: text,
+        p_chat_id: this.activeChat.id, p_content: text,
       });
       if (error) throw error;
     } catch (e) {
@@ -2372,7 +2369,6 @@ class NEXORA {
           const commandsRaw = body.querySelector("#bf-commands").value;
           const errEl = body.querySelector("#bf-error");
           errEl.classList.remove("show");
-
           if (!/^[a-zA-Z0-9_]{3,24}$/.test(username)) {
             errEl.textContent = "Username: 3–24, латиница/цифры/_";
             errEl.classList.add("show");
@@ -2385,10 +2381,8 @@ class NEXORA {
           });
           try {
             const { data, error } = await supabase.rpc("create_custom_bot", {
-              p_username: username,
-              p_display_name: name || username,
-              p_description: desc,
-              p_commands: commands,
+              p_username: username, p_display_name: name || username,
+              p_description: desc, p_commands: commands,
             });
             if (error) throw error;
             toast("Бот создан", "success");
@@ -2414,7 +2408,6 @@ class NEXORA {
         .eq("owner_id", this.user.id)
         .order("created_at", { ascending: false });
       if (error) throw error;
-
       this.openModal({
         title: "Мои боты",
         body: (body) => {
@@ -2479,8 +2472,7 @@ class NEXORA {
           });
           try {
             const { error } = await supabase.rpc("update_bot_commands", {
-              p_bot_id: bot.bot_user_id,
-              p_commands: commands,
+              p_bot_id: bot.bot_user_id, p_commands: commands,
             });
             if (error) throw error;
             toast("Команды обновлены", "success");
@@ -2603,12 +2595,10 @@ class NEXORA {
     if (existing) { existing.remove(); return; }
     const picker = document.createElement("div");
     picker.id = "picker"; picker.className = "picker";
-
     const tabs = document.createElement("div");
     tabs.className = "picker-tabs"; picker.appendChild(tabs);
     const body = document.createElement("div");
     body.className = "picker-body"; picker.appendChild(body);
-
     document.querySelector(".chat-view").appendChild(picker);
 
     const addTab = (label, onClick) => {
@@ -2734,12 +2724,8 @@ class NEXORA {
   subscribePolls(chatId) {
     if (this.pollsChannel) { supabase.removeChannel(this.pollsChannel); this.pollsChannel = null; }
     this.pollsChannel = supabase.channel("polls:" + chatId)
-      .on("postgres_changes",
-        { event: "*", schema: "public", table: "poll_votes" },
-        () => this.reloadPollsSafe())
-      .on("postgres_changes",
-        { event: "*", schema: "public", table: "polls", filter: `chat_id=eq.${chatId}` },
-        () => this.reloadPollsSafe())
+      .on("postgres_changes", { event: "*", schema: "public", table: "poll_votes" }, () => this.reloadPollsSafe())
+      .on("postgres_changes", { event: "*", schema: "public", table: "polls", filter: `chat_id=eq.${chatId}` }, () => this.reloadPollsSafe())
       .subscribe();
   }
 
@@ -2769,21 +2755,18 @@ class NEXORA {
       sub.classList.add("typing");
     } else {
       const peer = chat.peer;
-      if (chat.type === "channel") {
-        sub.textContent = `${chat.is_public ? "публичный" : "приватный"} канал · ${chat.members_count || 0} подписчиков`;
-      } else if (chat.type === "saved") {
-        sub.textContent = "Твои сохранённые сообщения";
-      } else {
-        sub.textContent = peer?.nexora_id || (chat.members_count ? `${chat.members_count} участников` : "");
-      }
+      if (chat.is_notification) sub.textContent = "Уведомления о входах в аккаунт";
+      else if (chat.type === "channel") sub.textContent = `${chat.is_public ? "публичный" : "приватный"} канал · ${chat.members_count || 0} подписчиков`;
+      else if (chat.type === "group") sub.textContent = `${chat.is_public ? "публичная" : "приватная"} группа · ${chat.members_count || 0} участников`;
+      else if (chat.type === "saved") sub.textContent = "Твои сохранённые сообщения";
+      else sub.textContent = peer?.nexora_id || (chat.members_count ? `${chat.members_count} участников` : "");
       sub.classList.remove("typing");
     }
   }
 
   subscribeProfiles() {
     supabase.channel("profiles-watch")
-      .on("postgres_changes",
-        { event: "UPDATE", schema: "public", table: "profiles" },
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles" },
         (p) => this.onProfileUpdate(p.new))
       .subscribe();
   }
@@ -2796,9 +2779,7 @@ class NEXORA {
           const m = p.new;
           if (!m || m.sender_id === this.user.id) return;
           if (this.activeChat && m.chat_id === this.activeChat.id) return;
-
           this.refreshChats();
-
           const chat = this.chats.find(c => c.id === m.chat_id);
           const title = chat?.display_title || "NEXORA";
           this.notify(title, m.content || "Новое сообщение");
@@ -2806,8 +2787,7 @@ class NEXORA {
         })
       .on("postgres_changes",
         { event: "*", schema: "public", table: "chat_reads" },
-        () => this.loadReadsByOther()
-      )
+        () => this.loadReadsByOther())
       .subscribe();
   }
 
@@ -2826,7 +2806,6 @@ class NEXORA {
     this.markChatRead(this.activeChat.id);
     this.refreshChats();
     Sounds.message();
-    // Если это опрос — догрузим
     if (m.kind === "poll") this.reloadPollsSafe();
   }
 
@@ -2915,10 +2894,13 @@ class NEXORA {
           </div>
           <div id="cs-error" class="form-error"></div>`;
 
-        // Тип канала
         let picked = isPublic;
         const typeBox = body.querySelector("#cs-type");
         const unameWrap = body.querySelector("#cs-username-wrap");
+        const inviteInfo = body.querySelector("#cs-invite-info");
+        const shareRow = body.querySelector("#cs-share-row");
+        const shareLink = body.querySelector("#cs-share-link");
+
         const setType = (pub) => {
           picked = pub;
           typeBox.querySelectorAll("button").forEach(b => b.className = "btn btn-ghost");
@@ -2926,6 +2908,7 @@ class NEXORA {
           unameWrap.style.display = pub ? "block" : "none";
           refreshInvite();
         };
+
         ["Публичный", "Приватный"].forEach((label, i) => {
           const b = document.createElement("button");
           b.className = "btn " + ((isPublic && i === 0) || (!isPublic && i === 1) ? "btn-primary" : "btn-ghost");
@@ -2934,20 +2917,16 @@ class NEXORA {
           typeBox.appendChild(b);
         });
 
-        // Ссылка-приглашение
-        const inviteInfo = body.querySelector("#cs-invite-info");
-        const shareRow = body.querySelector("#cs-share-row");
-        const shareLink = body.querySelector("#cs-share-link");
-
         function refreshInvite() {
           if (picked) {
             inviteInfo.textContent = "Публичный канал — ссылка формируется по @username.";
             shareRow.style.display = "none";
           } else {
-            const token = chat.invite_token || "(сгенерируется при сохранении)";
             inviteInfo.textContent = "Приватный канал — присоединиться можно только по ссылке.";
             shareRow.style.display = "flex";
-            shareLink.textContent = `${location.origin}${location.pathname}?c=${token}`;
+            shareLink.textContent = chat.invite_token
+              ? `${location.origin}${location.pathname}?c=${chat.invite_token}`
+              : "Ссылка появится после первого сохранения";
           }
         }
         refreshInvite();
@@ -2957,7 +2936,6 @@ class NEXORA {
           toast("Ссылка скопирована", "success");
         });
 
-        // Кнопки
         const f = this._openModal.footerEl;
         f.innerHTML = "";
         const cancel = document.createElement("button");
@@ -2971,22 +2949,129 @@ class NEXORA {
           const title = body.querySelector("#cs-title").value.trim();
           const desc = body.querySelector("#cs-desc").value.trim();
           const uname = body.querySelector("#cs-username").value.trim().toLowerCase();
-
-          if (!title) {
-            errEl.textContent = "Введите название"; errEl.classList.add("show"); return;
-          }
+          if (!title) { errEl.textContent = "Введите название"; errEl.classList.add("show"); return; }
           if (picked && !/^[a-z][a-z0-9_]{4,31}$/.test(uname)) {
-            errEl.textContent = "Username: 5–32 символа, начинается с буквы, a-z, 0-9, _";
+            errEl.textContent = "Username: 5–32, начинается с буквы, a-z, 0-9, _";
             errEl.classList.add("show"); return;
           }
-
           try {
             const { error } = await supabase.rpc("update_channel_settings", {
-              p_chat_id: chat.id,
-              p_is_public: picked,
+              p_chat_id: chat.id, p_is_public: picked,
               p_username: picked ? uname : null,
-              p_title: title,
-              p_description: desc,
+              p_title: title, p_description: desc,
+            });
+            if (error) throw error;
+            toast("Настройки сохранены", "success");
+            Sounds.success();
+            this.closeModal();
+            await this.refreshChats();
+          } catch (e) {
+            errEl.textContent = e.message || "Ошибка";
+            errEl.classList.add("show");
+          }
+        });
+        f.appendChild(cancel); f.appendChild(save);
+      },
+    });
+  }
+
+  openGroupSettings(chat) {
+    this.openModal({
+      title: "Настройки группы",
+      body: (body) => {
+        const isPublic = !!chat.is_public;
+        body.innerHTML = `
+          <div class="settings-section">
+            <h3>Название</h3>
+            <input id="gs-title" maxlength="80" value="${escapeHtml(chat.title || "")}">
+            <textarea id="gs-desc" rows="2" maxlength="200" placeholder="Описание (необязательно)" style="margin-top:8px">${escapeHtml(chat.description || "")}</textarea>
+          </div>
+          <div class="settings-section">
+            <h3>Тип группы</h3>
+            <div id="gs-type" style="display:flex;gap:8px"></div>
+            <div id="gs-username-wrap" style="margin-top:12px; display:${isPublic ? "block" : "none"}">
+              <label style="font-size:11px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:1px">Username</label>
+              <div class="input-prefix" style="margin-top:6px">
+                <span class="prefix">@</span>
+                <input id="gs-username" maxlength="32" value="${escapeHtml(chat.username || "")}" placeholder="my_group">
+              </div>
+              <small style="display:block;margin-top:6px;color:var(--text-3);font-size:11px">5–32 символа, латиница, цифры, _. Люди смогут найти группу по @username.</small>
+            </div>
+          </div>
+          <div class="settings-section">
+            <h3>Ссылка-приглашение</h3>
+            <div id="gs-invite-info" style="color:var(--text-2);font-size:13px"></div>
+            <div class="share-row" id="gs-share-row" style="display:none">
+              <span class="share-link" id="gs-share-link"></span>
+              <button class="btn btn-ghost" id="gs-copy">Копировать</button>
+            </div>
+          </div>
+          <div id="gs-error" class="form-error"></div>`;
+
+        let picked = isPublic;
+        const typeBox = body.querySelector("#gs-type");
+        const unameWrap = body.querySelector("#gs-username-wrap");
+        const inviteInfo = body.querySelector("#gs-invite-info");
+        const shareRow = body.querySelector("#gs-share-row");
+        const shareLink = body.querySelector("#gs-share-link");
+
+        const setType = (pub) => {
+          picked = pub;
+          typeBox.querySelectorAll("button").forEach(b => b.className = "btn btn-ghost");
+          (pub ? typeBox.children[0] : typeBox.children[1]).className = "btn btn-primary";
+          unameWrap.style.display = pub ? "block" : "none";
+          refreshInvite();
+        };
+
+        ["Публичная", "Приватная"].forEach((label, i) => {
+          const b = document.createElement("button");
+          b.className = "btn " + ((isPublic && i === 0) || (!isPublic && i === 1) ? "btn-primary" : "btn-ghost");
+          b.textContent = label;
+          b.addEventListener("click", () => setType(i === 0));
+          typeBox.appendChild(b);
+        });
+
+        function refreshInvite() {
+          if (picked) {
+            inviteInfo.textContent = "Публичная группа — ссылка формируется по @username.";
+            shareRow.style.display = "none";
+          } else {
+            inviteInfo.textContent = "Приватная группа — присоединиться можно только по ссылке.";
+            shareRow.style.display = "flex";
+            shareLink.textContent = chat.invite_token
+              ? `${location.origin}${location.pathname}?c=${chat.invite_token}`
+              : "Ссылка появится после первого сохранения";
+          }
+        }
+        refreshInvite();
+
+        body.querySelector("#gs-copy").addEventListener("click", () => {
+          navigator.clipboard.writeText(shareLink.textContent);
+          toast("Ссылка скопирована", "success");
+        });
+
+        const f = this._openModal.footerEl;
+        f.innerHTML = "";
+        const cancel = document.createElement("button");
+        cancel.className = "btn btn-ghost"; cancel.textContent = "Отмена";
+        cancel.addEventListener("click", () => this.closeModal());
+        const save = document.createElement("button");
+        save.className = "btn btn-primary"; save.textContent = "Сохранить";
+        save.addEventListener("click", async () => {
+          const errEl = body.querySelector("#gs-error");
+          errEl.classList.remove("show");
+          const title = body.querySelector("#gs-title").value.trim();
+          const desc = body.querySelector("#gs-desc").value.trim();
+          const uname = body.querySelector("#gs-username").value.trim().toLowerCase();
+          if (!title) { errEl.textContent = "Введите название"; errEl.classList.add("show"); return; }
+          if (picked && !/^[a-z][a-z0-9_]{4,31}$/.test(uname)) {
+            errEl.textContent = "Username: 5–32, начинается с буквы, a-z, 0-9, _";
+            errEl.classList.add("show"); return;
+          }
+          try {
+            const { error } = await supabase.rpc("update_group_settings", {
+              p_chat_id: chat.id, p_title: title, p_description: desc,
+              p_is_public: picked, p_username: picked ? uname : null,
             });
             if (error) throw error;
             toast("Настройки сохранены", "success");
@@ -3006,16 +3091,18 @@ class NEXORA {
   openChannelShare(chat) {
     const url = chat.is_public && chat.username
       ? `${location.origin}${location.pathname}?c=${chat.username}`
-      : `${location.origin}${location.pathname}?c=${chat.invite_token}`;
+      : chat.invite_token
+        ? `${location.origin}${location.pathname}?c=${chat.invite_token}`
+        : "Ссылка появится после первого сохранения";
     this.openModal({
-      title: "Поделиться каналом",
+      title: "Поделиться",
       narrow: true,
       body: (body) => {
         body.innerHTML = `
           <p style="color:var(--text-2);font-size:13px;margin-bottom:10px">
             ${chat.is_public
-              ? `Публичный канал — любой может найти по @${escapeHtml(chat.username)}.`
-              : "Приватный канал — присоединиться можно только по этой ссылке."}
+              ? `Публичный — любой найдёт по @${escapeHtml(chat.username || "")}.`
+              : "Приватный — только по этой ссылке."}
           </p>
           <div class="share-row">
             <span class="share-link" id="ch-share">${escapeHtml(url)}</span>
@@ -3048,13 +3135,12 @@ class NEXORA {
       const usr = params.get("u");
 
       if (chan) {
-        // Может быть @username или invite_token
         const ch = await this.tryFindChannel(chan.replace(/^@/, ""));
         if (ch) {
           if (ch.already_member) {
             await this.openChatById(ch.id);
           } else if (ch.is_public) {
-            if (confirm(`Присоединиться к каналу «${ch.title}»?`)) {
+            if (confirm(`Присоединиться к «${ch.title}»?`)) {
               try {
                 await supabase.rpc("join_channel", { p_chat_id: ch.id });
                 await this.refreshChats();
@@ -3063,8 +3149,7 @@ class NEXORA {
               } catch (e) { toast(e.message || "Ошибка", "error"); }
             }
           } else {
-            // Приватный — нужен confirm
-            if (confirm(`Присоединиться к приватному каналу «${ch.title}»?`)) {
+            if (confirm(`Присоединиться к приватному «${ch.title}»?`)) {
               try {
                 await supabase.from("chat_members").insert({
                   chat_id: ch.id, user_id: this.user.id, role: "member",
@@ -3096,7 +3181,6 @@ class NEXORA {
       title: "Настройки",
       wide: true,
       body: (body) => {
-        // Account
         body.appendChild(this.section("👤 Аккаунт", [
           this.row("Username", this.profile.username, () => this.changeUsername()),
           this.row("NEXORA ID", this.profile.nexora_id, () => {
@@ -3110,7 +3194,6 @@ class NEXORA {
           }, "Открыть"),
         ]));
 
-        // Security
         body.appendChild(this.section("🔒 Безопасность", [
           this.row("Пароль", "Изменить пароль", () => this.changePassword()),
           this.row("2FA", "TOTP-аутентификация", () => this.toggle2FA()),
@@ -3222,22 +3305,22 @@ class NEXORA {
         botsSec.appendChild(myBotsBtn);
         body.appendChild(botsSec);
 
-        // Saved
-        const savedSec = document.createElement("div");
-        savedSec.className = "settings-section";
-        savedSec.innerHTML = `<h3>⭐ Избранное</h3>
-          <p style="color:var(--text-2);font-size:13px;margin-bottom:10px">
-            Чат для сохранения сообщений, ссылок и файлов. Как «Saved Messages» в Telegram.
-          </p>`;
-        const savedBtn = document.createElement("button");
-        savedBtn.className = "btn btn-primary";
-        savedBtn.textContent = "Открыть Избранное";
-        savedBtn.addEventListener("click", () => {
-          this.closeModal();
-          this.openSavedChat();
-        });
-        savedSec.appendChild(savedBtn);
-        body.appendChild(savedSec);
+        // Service chats
+        const serviceSec = document.createElement("div");
+        serviceSec.className = "settings-section";
+        serviceSec.innerHTML = `<h3>📂 Служебные чаты</h3>`;
+        const row1 = document.createElement("button");
+        row1.className = "btn btn-ghost btn-block";
+        row1.textContent = "⭐ Открыть Избранное";
+        row1.style.marginBottom = "8px";
+        row1.addEventListener("click", () => { this.closeModal(); this.openSavedChat(); });
+        serviceSec.appendChild(row1);
+        const row2 = document.createElement("button");
+        row2.className = "btn btn-ghost btn-block";
+        row2.textContent = "📩 Открыть уведомления NEXORA";
+        row2.addEventListener("click", () => { this.closeModal(); this.openNotificationChat(); });
+        serviceSec.appendChild(row2);
+        body.appendChild(serviceSec);
 
         // Search messages
         const searchSec = document.createElement("div");
@@ -3257,10 +3340,9 @@ class NEXORA {
         about.innerHTML = `<h3>ℹ О приложении</h3>
           <div style="color:var(--text-0);font-weight:700">NEXORA</div>
           <div style="color:var(--text-2);font-size:13px;margin-top:4px">Connect without limits.</div>
-          <div style="color:var(--text-3);font-size:12px;margin-top:6px">Version 6.0</div>`;
+          <div style="color:var(--text-3);font-size:12px;margin-top:6px">Version 7.0</div>`;
         body.appendChild(about);
 
-        // Logout
         const out = document.createElement("button");
         out.className = "btn btn-danger btn-block";
         out.textContent = "Выйти из аккаунта";
@@ -3282,7 +3364,7 @@ class NEXORA {
       body: (body) => {
         body.innerHTML = "";
         if (!sessions.length) {
-          body.innerHTML = `<p class="muted">Нет данных о сессиях</p>`;
+          body.innerHTML = `<p class="muted">Нет данных о сессиях. Возможно, в проекте отключён доступ к таблице sessions.</p>`;
         } else {
           sessions.forEach(s => {
             const row = document.createElement("div");
@@ -3334,7 +3416,6 @@ class NEXORA {
         .order("created_at", { ascending: false })
         .limit(50);
       if (error) throw error;
-
       this.openModal({
         title: "Результаты поиска",
         wide: true,
@@ -3348,10 +3429,7 @@ class NEXORA {
               <div class="settings-row-label">${escapeHtml((m.content || "").slice(0, 100))}</div>
               <div class="settings-row-desc">${escapeHtml(formatTime(m.created_at))}</div>
             </div>`;
-            row.addEventListener("click", () => {
-              this.closeModal();
-              this.openChatById(m.chat_id);
-            });
+            row.addEventListener("click", () => { this.closeModal(); this.openChatById(m.chat_id); });
             body.appendChild(row);
           });
         },
@@ -3489,7 +3567,6 @@ class NEXORA {
       title: "Профиль",
       body: async (body) => {
         body.innerHTML = `<div class="empty-state"><span class="spinner"></span></div>`;
-
         let card;
         try {
           const { data, error } = await supabase.rpc("get_user_card", { p_user_id: userId });
@@ -3500,10 +3577,7 @@ class NEXORA {
           body.innerHTML = `<div class="empty-state">Не удалось загрузить профиль</div>`;
           return;
         }
-        if (!card) {
-          body.innerHTML = `<div class="empty-state">Профиль не найден</div>`;
-          return;
-        }
+        if (!card) { body.innerHTML = `<div class="empty-state">Профиль не найден</div>`; return; }
 
         if (!card.avatar_url && peer?.avatar_url) card.avatar_url = peer.avatar_url;
         if (!card.about && peer?.about) card.about = peer.about;
@@ -3523,7 +3597,7 @@ class NEXORA {
         const cardEl = document.createElement("div");
         cardEl.className = "profile-card";
         const coverHTML = card.cover_url
-          ? `<div class="profile-cover" style="background-image:url('${safeUrl(card.cover_url)}')"></div>`
+          ? `<div class="profile-cover with-image" style="background-image:url('${safeUrl(card.cover_url)}')"></div>`
           : `<div class="profile-cover"></div>`;
         cardEl.innerHTML = `
           ${coverHTML}
@@ -3756,8 +3830,7 @@ class NEXORA {
           }
           try {
             const { error } = await supabase.rpc("set_contact_nickname", {
-              p_contact_id: card.id,
-              p_nickname: v,
+              p_contact_id: card.id, p_nickname: v,
             });
             if (error) throw error;
             toast("Ярлык сохранён", "success");
@@ -3771,9 +3844,7 @@ class NEXORA {
             err.classList.add("show");
           }
         });
-        inp.addEventListener("keydown", (e) => {
-          if (e.key === "Enter") save.click();
-        });
+        inp.addEventListener("keydown", (e) => { if (e.key === "Enter") save.click(); });
         f.appendChild(cancel); f.appendChild(save);
       },
     });
@@ -3819,10 +3890,7 @@ class NEXORA {
           const comment = body.querySelector("#rp-comment").value.trim();
           try {
             const { error } = await supabase.from("reports").insert({
-              reporter_id: this.user.id,
-              reported_id: card.id,
-              reason: picked,
-              comment,
+              reporter_id: this.user.id, reported_id: card.id, reason: picked, comment,
             });
             if (error) throw error;
             toast("Жалоба отправлена", "success");
@@ -3846,6 +3914,9 @@ class NEXORA {
     if (!this.activeChat) return;
     const ctype = this.activeChat.type || "direct";
 
+    if (this.activeChat.is_notification) {
+      return this.openChatThemeDialog(this.activeChat);
+    }
     if (ctype === "direct" && this.activeChat.peer) {
       return this.openUserProfile(this.activeChat.peer.id, this.activeChat.peer);
     }
@@ -3859,77 +3930,13 @@ class NEXORA {
         return this.openChannelInfoReadonly(this.activeChat);
       }
     }
-
-    // Группа
-    this.openModal({
-      title: "Группа",
-      body: (body) => {
-        const hero = document.createElement("div");
-        hero.className = "profile-hero";
-        hero.innerHTML = `
-          ${avatarHTML(this.activePeer || { username: this.activeChat.display_title }, "lg")}
-          <div class="profile-hero-name">${escapeHtml(this.activeChat.display_title)}</div>`;
-        body.appendChild(hero);
-
-        const info = document.createElement("div");
-        info.className = "settings-section";
-        info.innerHTML = `<h3>Информация</h3>
-          <div style="color:var(--text-2);font-size:13px">Участников: ${this.members.length}</div>
-          ${this.activeChat.description ? `<div style="color:var(--text-2);font-size:13px;margin-top:8px">${escapeHtml(this.activeChat.description)}</div>` : ""}`;
-        body.appendChild(info);
-
-        const memSec = document.createElement("div");
-        memSec.className = "settings-section";
-        memSec.innerHTML = `<h3>Участники</h3>`;
-        this.members.forEach(m => {
-          const row = document.createElement("div");
-          row.className = "settings-row";
-          row.style.cursor = "pointer";
-          row.innerHTML = `
-            ${avatarHTML(m, "sm")}
-            <div class="settings-row-info">
-              <div class="settings-row-label">${escapeHtml(m.username)}${m.is_bot ? ' <span class="bot-badge">[BOT]</span>' : ""}</div>
-              <div class="settings-row-desc">${escapeHtml(m.nexora_id)} · ${escapeHtml(m.role)}</div>
-            </div>`;
-          row.addEventListener("click", () => {
-            if (m.user_id === this.user.id) return;
-            this.closeModal();
-            setTimeout(() => this.openUserProfile(m.user_id, m), 100);
-          });
-          memSec.appendChild(row);
-        });
-        body.appendChild(memSec);
-
-        const inviteBtn = document.createElement("button");
-        inviteBtn.className = "btn btn-primary";
-        inviteBtn.style.marginRight = "8px";
-        inviteBtn.textContent = "➕ Пригласить";
-        inviteBtn.addEventListener("click", () => { this.closeModal(); setTimeout(() => this.openInviteDialog(), 100); });
-        body.appendChild(inviteBtn);
-
-        const themeBtn = document.createElement("button");
-        themeBtn.className = "btn btn-ghost";
-        themeBtn.textContent = "🎨 Тема чата";
-        themeBtn.addEventListener("click", () => { this.closeModal(); this.openChatThemeDialog(this.activeChat); });
-        body.appendChild(themeBtn);
-
-        const leaveBtn = document.createElement("button");
-        leaveBtn.className = "btn btn-danger btn-block";
-        leaveBtn.style.marginTop = "12px";
-        leaveBtn.textContent = "Покинуть";
-        leaveBtn.addEventListener("click", async () => {
-          if (!confirm("Покинуть чат?")) return;
-          await supabase.from("chat_members").delete().eq("chat_id", this.activeChat.id).eq("user_id", this.user.id);
-          this.closeModal();
-          $("chat-view").classList.add("hidden");
-          $("welcome").classList.remove("hidden");
-          this.activeChat = null;
-          await this.refreshChats();
-          toast("Покинул", "warning");
-        });
-        body.appendChild(leaveBtn);
-      },
-    });
+    if (ctype === "group") {
+      if (this.activeChat.my_role === "owner" || this.activeChat.my_role === "admin") {
+        return this.openGroupSettings(this.activeChat);
+      } else {
+        return this.openGroupInfoReadonly(this.activeChat);
+      }
+    }
   }
 
   openChannelInfoReadonly(chat) {
@@ -3943,23 +3950,17 @@ class NEXORA {
           <div class="profile-hero-name">${escapeHtml(chat.title || "")}</div>
           <div class="profile-id-badge">${chat.username ? "@" + escapeHtml(chat.username) : "приватный"}</div>`;
         body.appendChild(hero);
-
         const info = document.createElement("div");
         info.className = "settings-section";
         info.innerHTML = `<h3>Информация</h3>
           <div style="color:var(--text-2);font-size:13px">Подписчиков: ${chat.members_count || 0}</div>
           ${chat.description ? `<div style="color:var(--text-2);font-size:13px;margin-top:8px">${escapeHtml(chat.description)}</div>` : ""}`;
         body.appendChild(info);
-
         const btnShare = document.createElement("button");
         btnShare.className = "btn btn-ghost btn-block";
         btnShare.textContent = "🔗 Поделиться ссылкой";
-        btnShare.addEventListener("click", () => {
-          this.closeModal();
-          setTimeout(() => this.openChannelShare(chat), 100);
-        });
+        btnShare.addEventListener("click", () => { this.closeModal(); setTimeout(() => this.openChannelShare(chat), 100); });
         body.appendChild(btnShare);
-
         const leave = document.createElement("button");
         leave.className = "btn btn-danger btn-block";
         leave.style.marginTop = "10px";
@@ -3973,6 +3974,47 @@ class NEXORA {
           this.activeChat = null;
           await this.refreshChats();
           toast("Отписались", "warning");
+        });
+        body.appendChild(leave);
+      },
+    });
+  }
+
+  openGroupInfoReadonly(chat) {
+    this.openModal({
+      title: "О группе",
+      body: (body) => {
+        const hero = document.createElement("div");
+        hero.className = "profile-hero";
+        hero.innerHTML = `
+          <div class="avatar avatar-lg">👥</div>
+          <div class="profile-hero-name">${escapeHtml(chat.title || "")}</div>
+          <div class="profile-id-badge">${chat.username ? "@" + escapeHtml(chat.username) : "приватная"}</div>`;
+        body.appendChild(hero);
+        const info = document.createElement("div");
+        info.className = "settings-section";
+        info.innerHTML = `<h3>Информация</h3>
+          <div style="color:var(--text-2);font-size:13px">Участников: ${chat.members_count || 0}</div>
+          ${chat.description ? `<div style="color:var(--text-2);font-size:13px;margin-top:8px">${escapeHtml(chat.description)}</div>` : ""}`;
+        body.appendChild(info);
+        const btnShare = document.createElement("button");
+        btnShare.className = "btn btn-ghost btn-block";
+        btnShare.textContent = "🔗 Поделиться ссылкой";
+        btnShare.addEventListener("click", () => { this.closeModal(); setTimeout(() => this.openChannelShare(chat), 100); });
+        body.appendChild(btnShare);
+        const leave = document.createElement("button");
+        leave.className = "btn btn-danger btn-block";
+        leave.style.marginTop = "10px";
+        leave.textContent = "Покинуть группу";
+        leave.addEventListener("click", async () => {
+          if (!confirm("Покинуть группу?")) return;
+          await supabase.from("chat_members").delete().eq("chat_id", chat.id).eq("user_id", this.user.id);
+          this.closeModal();
+          $("chat-view").classList.add("hidden");
+          $("welcome").classList.remove("hidden");
+          this.activeChat = null;
+          await this.refreshChats();
+          toast("Покинули группу", "warning");
         });
         body.appendChild(leave);
       },
@@ -4054,7 +4096,6 @@ class NEXORA {
         } else {
           holder.textContent = "QR недоступен, используй секрет";
         }
-
         const f = this._openModal.footerEl;
         f.innerHTML = "";
         const cancel = document.createElement("button");
@@ -4099,7 +4140,7 @@ class NEXORA {
   }
 
   /* ============================================================
-     NEW CHAT / CHANNEL
+     NEW CHAT / GROUP / CHANNEL
      ============================================================ */
   openNewChatDialog() {
     this.openModal({
@@ -4116,7 +4157,7 @@ class NEXORA {
             <input id="nc-title" maxlength="80" placeholder="Название">
             <input id="nc-desc" maxlength="200" placeholder="Описание (необязательно)" style="margin-top:10px">
           </div>
-          <div class="settings-section" id="nc-chan-block" style="display:none">
+          <div class="settings-section" id="nc-privacy-block" style="display:none">
             <h3>Публичность</h3>
             <div id="nc-public" style="display:flex;gap:8px"></div>
             <div id="nc-username-wrap" style="margin-top:10px;display:none">
@@ -4125,7 +4166,7 @@ class NEXORA {
                 <span class="prefix">@</span>
                 <input id="nc-username" maxlength="32" placeholder="my_channel">
               </div>
-              <small style="display:block;margin-top:6px;color:var(--text-3);font-size:11px">5–32 символа, латиница, цифры, _. Люди смогут найти канал по @username.</small>
+              <small style="display:block;margin-top:6px;color:var(--text-3);font-size:11px">5–32 символа, латиница, цифры, _. Люди смогут найти по @username.</small>
             </div>
           </div>
           <div class="settings-section">
@@ -4134,8 +4175,7 @@ class NEXORA {
           </div>`;
 
         const typeBox = body.querySelector("#nc-type");
-        const chanBlock = body.querySelector("#nc-chan-block");
-        let isPublic = true;
+        const privacyBlock = body.querySelector("#nc-privacy-block");
         let pickedPublic = true;
 
         const setType = (t) => {
@@ -4143,7 +4183,7 @@ class NEXORA {
           typeBox.querySelectorAll("button").forEach(x => x.className = "btn btn-ghost");
           const idx = t === "group" ? 0 : 1;
           typeBox.children[idx].className = "btn btn-primary";
-          chanBlock.style.display = t === "channel" ? "block" : "none";
+          privacyBlock.style.display = "block";
         };
 
         ["👥 Группа", "📢 Канал"].forEach((label, i) => {
@@ -4170,6 +4210,10 @@ class NEXORA {
           b.addEventListener("click", () => setPublic(i === 0));
           pubBox.appendChild(b);
         });
+
+        // Изначально группа — показываем блок
+        setType("group");
+        setPublic(true);
 
         const membersBox = body.querySelector("#nc-members");
         const checks = [];
@@ -4211,21 +4255,30 @@ class NEXORA {
                 return toast("Username: 5–32, начинается с буквы, a-z 0-9 _", "warning");
               }
               const { data, error } = await supabase.rpc("create_channel", {
-                p_title: title,
-                p_description: desc,
-                p_member_ids: ids,
-                p_is_public: pickedPublic,
-                p_username: uname,
+                p_title: title, p_description: desc, p_member_ids: ids,
+                p_is_public: pickedPublic, p_username: uname,
               });
               if (error) throw error;
               chatId = data;
             } else {
+              // Группа: сначала создаём как обычную группу
               const { data, error } = await supabase.rpc("create_group_chat", {
-                p_title: title, p_member_ids: ids, p_type: "group",
-                p_description: desc,
+                p_title: title, p_member_ids: ids, p_type: "group", p_description: desc,
               });
               if (error) throw error;
               chatId = data;
+              // Затем настраиваем приватность
+              const uname = pickedPublic ? body.querySelector("#nc-username").value.trim().toLowerCase() : null;
+              if (pickedPublic && !/^[a-z][a-z0-9_]{4,31}$/.test(uname || "")) {
+                toast("Группа создана, но username не сохранён (формат)", "warning");
+              } else {
+                try {
+                  await supabase.rpc("update_group_settings", {
+                    p_chat_id: chatId, p_title: title, p_description: desc,
+                    p_is_public: pickedPublic, p_username: pickedPublic ? uname : null,
+                  });
+                } catch (_) {}
+              }
             }
             toast(chatType === "channel" ? "Канал создан" : "Группа создана", "success");
             Sounds.success();
@@ -4242,7 +4295,6 @@ class NEXORA {
   openInviteDialog() {
     const existing = new Set(this.members.map(m => m.user_id));
     const candidates = this.contacts.filter(c => !existing.has(c.id));
-
     this.openModal({
       title: "Пригласить",
       narrow: true,
@@ -4311,6 +4363,9 @@ class NEXORA {
 
       const accBtn = $("btn-accounts");
       if (accBtn) accBtn.addEventListener("click", () => { Sounds.click(); this.openAccountsSwitcher(); });
+
+      const notifBtn = $("btn-notifications");
+      if (notifBtn) notifBtn.addEventListener("click", () => { Sounds.click(); this.openNotificationChat(); });
 
       const searchChan = $("btn-search-channel");
       if (searchChan) searchChan.addEventListener("click", () => {
