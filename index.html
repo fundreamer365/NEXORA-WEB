@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="ru" data-theme="dark">
+<html lang="ru" data-theme="dark" data-theme-id="nexora-dark">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -24,83 +24,75 @@
 
 <div class="parallax-bg"></div>
 
-<!-- ============================================================
-     BOOT
-     ============================================================ -->
+<!-- BOOT -->
 <div id="screen-boot" class="screen active">
   <div class="boot-logo">NEXORA</div>
   <div class="boot-tagline">Connect without limits.</div>
   <div class="spinner" style="margin-top:24px"></div>
 </div>
 
-<!-- ============================================================
-     AUTH
-     ============================================================ -->
+<!-- AUTH -->
 <div id="screen-auth" class="screen">
   <div class="auth-wrap">
-
     <div id="auth-login" class="auth-card">
       <div class="auth-logo">NEXORA</div>
-      <div class="auth-tagline">Welcome back</div>
+      <div class="auth-tagline" data-i18n="welcomeBack">Welcome back</div>
       <div class="form-group">
-        <label>Nickname</label>
+        <label data-i18n="nickname">Nickname</label>
         <input id="login-username" type="text" autocomplete="username" placeholder="your_nickname" autofocus>
       </div>
       <div class="form-group">
-        <label>Password</label>
+        <label data-i18n="password">Password</label>
         <input id="login-password" type="password" autocomplete="current-password" placeholder="••••••••">
       </div>
       <div id="login-error" class="form-error"></div>
-      <button id="btn-login" class="btn btn-primary btn-block">Sign in</button>
+      <button id="btn-login" class="btn btn-primary btn-block" data-i18n="login">Sign in</button>
       <div class="auth-row">
-        <button id="goto-register" class="btn btn-ghost">Create account</button>
-        <button id="goto-forgot" class="btn btn-ghost">Forgot password?</button>
+        <button id="goto-register" class="btn btn-ghost" data-i18n="createAccount">Create account</button>
+        <button id="goto-forgot" class="btn btn-ghost" data-i18n="forgotPassword">Forgot password?</button>
       </div>
     </div>
 
     <div id="auth-register" class="auth-card hidden">
       <div class="auth-logo">NEXORA</div>
-      <div class="auth-tagline">Create account</div>
+      <div class="auth-tagline" data-i18n="register">Create account</div>
       <div class="form-group">
-        <label>Nickname</label>
+        <label data-i18n="nickname">Nickname</label>
         <input id="reg-username" type="text" maxlength="24" placeholder="your_nickname">
         <small>3–24 символа: буквы, цифры, _</small>
       </div>
       <div class="form-group">
-        <label>Password</label>
+        <label data-i18n="password">Password</label>
         <input id="reg-password" type="password" placeholder="Минимум 8 символов">
       </div>
       <div class="form-group">
-        <label>Confirm password</label>
+        <label data-i18n="confirmPassword">Confirm password</label>
         <input id="reg-password2" type="password" placeholder="Повтори пароль">
       </div>
       <div id="reg-error" class="form-error"></div>
-      <button id="btn-register" class="btn btn-primary btn-block">Create account</button>
+      <button id="btn-register" class="btn btn-primary btn-block" data-i18n="createAccount">Create account</button>
       <div class="auth-row">
-        <button id="goto-login" class="btn btn-ghost">Already have an account?</button>
+        <button id="goto-login" class="btn btn-ghost" data-i18n="alreadyHave">Already have an account?</button>
       </div>
     </div>
 
     <div id="auth-mfa" class="auth-card hidden">
       <div class="auth-logo">NEXORA</div>
-      <div class="auth-tagline">Two-factor authentication</div>
-      <p class="muted">Введи 6-значный код из приложения-аутентификатора</p>
+      <div class="auth-tagline" data-i18n="twoFA">Two-factor authentication</div>
+      <p class="muted" data-i18n="enterCode">Введи 6-значный код из приложения-аутентификатора</p>
       <div class="form-group">
         <input id="mfa-code" class="mfa-input" type="text" inputmode="numeric" maxlength="6" placeholder="000000">
       </div>
       <div id="mfa-error" class="form-error"></div>
-      <button id="btn-mfa" class="btn btn-primary btn-block">Verify</button>
+      <button id="btn-mfa" class="btn btn-primary btn-block" data-i18n="verify">Verify</button>
       <div class="auth-row">
-        <button id="mfa-cancel" class="btn btn-ghost">Cancel</button>
+        <button id="mfa-cancel" class="btn btn-ghost" data-i18n="cancel">Cancel</button>
       </div>
     </div>
-
   </div>
 </div>
 
-<!-- ============================================================
-     APP
-     ============================================================ -->
+<!-- APP -->
 <div id="screen-app" class="screen">
   <div class="app">
 
@@ -108,8 +100,9 @@
       <div class="sidebar-header">
         <div class="brand">NEXORA</div>
         <div class="header-actions">
-          <button id="btn-notifications" class="icon-btn" title="Уведомления NEXORA">📩</button>
-          <button id="btn-search-channel" class="icon-btn" title="Найти канал или группу">🔍</button>
+          <button id="btn-notifications" class="icon-btn" title="Уведомления">📩</button>
+          <button id="btn-search-channel" class="icon-btn" title="Найти канал">🔍</button>
+          <button id="btn-catalog" class="icon-btn" title="Каталог">🌐</button>
           <button id="btn-accounts" class="icon-btn" title="Аккаунты">👥</button>
           <button id="btn-new-chat" class="icon-btn" title="Новая группа или канал">＋</button>
           <button id="btn-settings-top" class="icon-btn" title="Настройки">⚙</button>
@@ -122,11 +115,34 @@
       </div>
 
       <nav class="sidebar-tabs">
-        <button class="tab active" data-tab="chats">💬 Чаты</button>
-        <button class="tab" data-tab="contacts">👥 Контакты</button>
+        <button class="tab active" data-tab="chats" data-i18n="chats">💬 Чаты</button>
+        <button class="tab" data-tab="contacts" data-i18n="contacts">👥 Контакты</button>
       </nav>
 
       <div id="sidebar-list" class="sidebar-list"></div>
+
+      <div class="sidebar-quick-actions">
+        <button id="btn-quick-group" class="quick-action-btn">
+          <span class="qa-icon">👥</span>
+          <span data-i18n="createGroup">Создать группу</span>
+        </button>
+        <button id="btn-quick-channel" class="quick-action-btn">
+          <span class="qa-icon">📢</span>
+          <span data-i18n="createChannel">Создать канал</span>
+        </button>
+        <button id="btn-quick-bot" class="quick-action-btn">
+          <span class="qa-icon">🤖</span>
+          <span data-i18n="createBot">Создать бота</span>
+        </button>
+        <button id="btn-quick-local" class="quick-action-btn">
+          <span class="qa-icon">📍</span>
+          <span data-i18n="createLocalRoom">Локальная комната</span>
+        </button>
+        <button id="btn-quick-ephemeral" class="quick-action-btn">
+          <span class="qa-icon">⏳</span>
+          <span data-i18n="createEphemeral">Исчезающий чат</span>
+        </button>
+      </div>
 
       <div class="sidebar-footer" id="sidebar-footer">
         <div class="avatar avatar-md" id="me-avatar">?</div>
@@ -168,10 +184,21 @@
           <button id="attach-cancel" class="icon-btn">✕</button>
         </div>
 
+        <div id="voice-bar" class="voice-bar hidden">
+          <span class="voice-dot"></span>
+          <span class="voice-time">0:00</span>
+          <span style="color:var(--text-2);font-size:12px">Идёт запись…</span>
+          <div class="voice-actions">
+            <button class="btn btn-ghost" id="voice-cancel-btn">Отмена</button>
+            <button class="btn btn-primary" id="voice-send-btn">Отправить</button>
+          </div>
+        </div>
+
         <div class="composer">
           <button id="btn-attach" class="icon-btn" title="Прикрепить файл">📎</button>
           <button id="btn-emoji" class="icon-btn" title="Эмодзи и стикеры">😊</button>
           <button id="btn-poll" class="icon-btn" title="Опрос">📊</button>
+          <button id="btn-voice" class="icon-btn" title="Голосовое сообщение">🎤</button>
           <textarea id="composer" rows="1" maxlength="4000"
                     placeholder="Напиши сообщение…  (Enter — отправить, Shift+Enter — новая строка)"></textarea>
           <button id="btn-send" class="btn btn-primary send-btn">➤</button>
