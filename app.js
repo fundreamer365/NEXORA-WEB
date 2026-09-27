@@ -1,8 +1,6 @@
 /* ============================================================
-   NEXORA v8.3 — единый app.js
-   Правки C: poll-creator, SW/этап C, DOMContentLoaded, polling,
-   stopPolling при logout, refreshChats без дублей, deep links.
-   Правки B-3: приватный вход через join_channel(p_chat_id, p_invite_token).
+   NEXORA v8.4 — единый app.js
+   Правки A: RLS chat_members ужесточён, локальные комнаты через RPC.
    ============================================================ */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
@@ -27,7 +25,6 @@ const COVER_MAX = 4 * 1024 * 1024;
 const ATTACH_MAX = 50 * 1024 * 1024;
 const STICKER_MAX = 2 * 1024 * 1024;
 
-/* H10: polling — только fallback. Realtime основной. */
 const POLL_MS = 20000;
 
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "🔥", "😮", "😢"];
@@ -128,7 +125,6 @@ function toast(message, kind = "info", title = null) {
   setTimeout(() => { el.style.opacity = "0"; setTimeout(() => el.remove(), 250); }, 3200);
 }
 
-/* N18: extraClass для avatarHTML, чтобы не хачить через .replace() */
 function avatarHTML(user, size = "md", extraClass = "") {
   const name = (user?.username || "?").trim();
   const initial = name ? name[0].toUpperCase() : "?";
@@ -441,7 +437,7 @@ class NEXORA {
     await supabase.auth.signOut();
     this.stopRealtime();
     this.stopPresence();
-    this.stopPolling();            // H11
+    this.stopPolling();
     this.user = null; this.profile = null;
     this.activeChat = null; this.messages = [];
     this.chats = []; this.contacts = [];
@@ -661,7 +657,7 @@ class NEXORA {
     await supabase.auth.signOut();
     this.stopRealtime();
     this.stopPresence();
-    this.stopPolling();            // H11
+    this.stopPolling();
     this.user = null; this.profile = null;
     this.activeChat = null; this.messages = [];
     this.chats = []; this.contacts = [];
@@ -735,7 +731,7 @@ class NEXORA {
     $("chat-view").classList.add("hidden");
     $("welcome").classList.remove("hidden");
     this.updatePageTitle();
-    await this.handleDeepLink();   // H9
+    await this.handleDeepLink();
   }
   renderSidebarFooter() {
     const me = this.profile;
@@ -1040,7 +1036,6 @@ class NEXORA {
       if (this.activeChat?.id === chatId) this.applyChatThemeToUI(chatId);
     } catch (e) { toast(e.message || "Ошибка", "error"); }
   }
-  /* H8: грузим темы один раз. force=true — по запросу. */
   async loadChatThemes(force = false) {
     if (!force && this._themeLoadedFor === this.user.id) return;
     try {
@@ -1230,7 +1225,7 @@ class NEXORA {
     } catch (e) { toast("Не удалось открыть уведомления", "error"); }
   }
   async openChat(chat) {
-    this.stopPolling();            // N12
+    this.stopPolling();
     this.activeChat = chat;
     this.activePeer = chat.peer || null;
     this.pendingReplyTo = null;
@@ -1938,7 +1933,7 @@ class NEXORA {
         this.paintMessageWindow();
       }
       this.hideReplyPreview();
-      this.refreshChats().catch(() => {});   // H7
+      this.refreshChats().catch(() => {});
       Sounds.send();
       this.maybeBotReply(data);
       setTimeout(() => this.checkStrangerBanner(), 200);
@@ -1949,11 +1944,10 @@ class NEXORA {
   }
 
   /* ============================================================
-     POLL CREATOR  (M16 — кнопка 📊 падала без этого)
+     POLL CREATOR
      ============================================================ */
   openPollCreator() {
     if (!this.activeChat) return;
-    const isChannelOrGroup = ["channel", "group"].includes(this.activeChat.type || "");
     this.openModal({
       title: t("createPoll"),
       body: (body) => {
@@ -2078,7 +2072,7 @@ class NEXORA {
           const btn = body.querySelector("#pl-create");
           btn.disabled = true; btn.textContent = "Создаём…";
           try {
-            const { data, error } = await supabase.rpc("create_poll", {
+            const { error } = await supabase.rpc("create_poll", {
               p_chat_id: this.activeChat.id,
               p_question: question,
               p_options: options,
@@ -2522,7 +2516,7 @@ class NEXORA {
         this.messages.push(data); this.paintMessageWindow();
       }
       this.hideReplyPreview();
-      this.refreshChats().catch(() => {});    // H7
+      this.refreshChats().catch(() => {});
       Sounds.send();
     } catch (e) { console.error(e); toast("Ошибка стикера", "error"); }
   }
@@ -2608,7 +2602,6 @@ class NEXORA {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, (p) => {
         const m = p.new;
         if (!m || m.sender_id === this.user.id) return;
-        // H1: если это активный чат — его обработает subscribeChat, не дублируем.
         if (this.activeChat && m.chat_id === this.activeChat.id) return;
         this.refreshChats().catch(() => {});
         const chat = this.chats.find(c => c.id === m.chat_id);
@@ -2626,11 +2619,7 @@ class NEXORA {
     if (this.pollsChannel) { supabase.removeChannel(this.pollsChannel); this.pollsChannel = null; }
   }
   onRealtimeInsert(m) {
-    if (!this.activeChat || m.chat_id !== this.activeChat.id) {
-      // Чужой чат — обновим список, но без дублей с global-messages.
-      // (subscribeChat подписан только на активный, поэтому сюда попадают только свои.)
-      return;
-    }
+    if (!this.activeChat || m.chat_id !== this.activeChat.id) return;
     if (this.messages.find(x => x.id === m.id)) return;
     if (m.sender_id === this.user.id) return;
     this.messages.push(m);
@@ -2957,7 +2946,6 @@ class NEXORA {
               } catch (e) { toast(e.message || "Ошибка", "error"); }
             }
           } else {
-            /* B-3: приватный вход — только через join_channel с токеном. */
             if (confirm(`Присоединиться к приватному «${ch.title}»?`)) {
               try {
                 await supabase.rpc("join_channel", {
@@ -3117,10 +3105,9 @@ class NEXORA {
                     </div>
                   </div>`;
                 card.addEventListener("click", async () => {
+                  /* A: через join_local_room, чтобы обойти ужесточённый RLS */
                   try {
-                    await supabase.from("chat_members").insert({
-                      chat_id: r.chat_id, user_id: this.user.id, role: "member",
-                    });
+                    await supabase.rpc("join_local_room", { p_chat_id: r.chat_id });
                   } catch (_) {}
                   this.closeModal();
                   await this.refreshChats();
@@ -3180,9 +3167,10 @@ class NEXORA {
             const { data: roomRow } = await supabase
               .from("local_rooms").select("chat_id").eq("id", data).single();
             if (roomRow) {
-              await supabase.from("chat_members").insert({
-                chat_id: roomRow.chat_id, user_id: this.user.id, role: "owner",
-              });
+              /* A: через join_local_room, чтобы обойти ужесточённый RLS */
+              try {
+                await supabase.rpc("join_local_room", { p_chat_id: roomRow.chat_id });
+              } catch (_) {}
               this.closeModal();
               await this.refreshChats();
               await this.openChatById(roomRow.chat_id);
@@ -3739,7 +3727,7 @@ class NEXORA {
         about.innerHTML = `<h3>ℹ ${t("aboutApp")}</h3>
           <div style="color:var(--text-0);font-weight:700">NEXORA</div>
           <div style="color:var(--text-2);font-size:13px;margin-top:4px">Connect without limits.</div>
-          <div style="color:var(--text-3);font-size:12px;margin-top:6px">Version 8.3</div>`;
+          <div style="color:var(--text-3);font-size:12px;margin-top:6px">Version 8.4</div>`;
         body.appendChild(about);
 
         const out = document.createElement("button");
@@ -4749,8 +4737,6 @@ class NEXORA {
           await this.openChatById(ch.id);
         } catch (e) { toast(e.message || "Ошибка", "error"); }
       } else {
-        /* B-3: приватный вход — только через join_channel с токеном.
-           find_channel возвращает invite_token — используем его. */
         try {
           const token = ch.invite_token || null;
           const { error } = await supabase.rpc("join_channel", {
@@ -4806,7 +4792,6 @@ class NEXORA {
       applyProfileTheme(getProfileTheme());
       applyTranslations();
 
-      // AUTH
       $("btn-login").addEventListener("click", () => this.doLogin());
       $("btn-register").addEventListener("click", () => this.doRegister());
       $("btn-mfa").addEventListener("click", () => this.doMfaVerify());
@@ -4822,10 +4807,8 @@ class NEXORA {
       $("reg-password2").addEventListener("keydown", (e) => { if (e.key === "Enter") this.doRegister(); });
       $("mfa-code").addEventListener("keydown", (e) => { if (e.key === "Enter") this.doMfaVerify(); });
 
-      // TABS
       $$(".tab").forEach(t2 => t2.addEventListener("click", () => this.setTab(t2.dataset.tab)));
 
-      // SETTINGS / LOGOUT
       $("btn-settings").addEventListener("click", () => { Sounds.click(); this.openSettings(); });
       $("btn-logout").addEventListener("click", () => this.logout());
       const sTop = $("btn-settings-top");
@@ -4833,19 +4816,15 @@ class NEXORA {
       const lTop = $("btn-logout-top");
       if (lTop) lTop.addEventListener("click", () => this.logout());
 
-      // ACCOUNTS
       const accBtn = $("btn-accounts");
       if (accBtn) accBtn.addEventListener("click", () => { Sounds.click(); this.openAccountsSwitcher(); });
 
-      // NOTIFICATIONS CHAT
       const notifBtn = $("btn-notifications");
       if (notifBtn) notifBtn.addEventListener("click", () => { Sounds.click(); this.openNotificationChat(); });
 
-      // CATALOG
       const catBtn = $("btn-catalog");
       if (catBtn) catBtn.addEventListener("click", () => { Sounds.click(); this.openChannelCatalog(); });
 
-      // SEARCH CHANNEL
       const searchChan = $("btn-search-channel");
       if (searchChan) searchChan.addEventListener("click", () => {
         Sounds.click();
@@ -4853,11 +4832,9 @@ class NEXORA {
         if (q) this.searchChannel(q.replace(/^@/, ""));
       });
 
-      // PROFILE
       $("me-avatar").addEventListener("click", () => { Sounds.click(); this.openProfile(); });
       $("me-name").addEventListener("click", () => { Sounds.click(); this.openProfile(); });
 
-      // SEARCH INPUT
       $("search-input").addEventListener("input", (e) => {
         clearTimeout(this.searchTimeout);
         const q = e.target.value.trim();
@@ -4865,10 +4842,8 @@ class NEXORA {
         this.searchTimeout = setTimeout(() => this.searchUser(q), 300);
       });
 
-      // NEW CHAT
       $("btn-new-chat").addEventListener("click", () => { Sounds.click(); this.openNewChatDialog(); });
 
-      // QUICK ACTIONS
       const qGroup = $("btn-quick-group");
       if (qGroup) qGroup.addEventListener("click", () => { Sounds.click(); this.openNewChatDialog("group"); });
       const qChannel = $("btn-quick-channel");
@@ -4880,7 +4855,6 @@ class NEXORA {
       const qEph = $("btn-quick-ephemeral");
       if (qEph) qEph.addEventListener("click", () => { Sounds.click(); this.openEphemeralDialog(); });
 
-      // COMPOSER
       const composer = $("composer");
       composer.addEventListener("input", () => {
         composer.style.height = "auto";
@@ -4927,7 +4901,6 @@ class NEXORA {
         }
       });
 
-      // MOBILE
       $("btn-mobile-menu").addEventListener("click", () => {
         $("sidebar").classList.toggle("hidden-mobile");
       });
@@ -4937,7 +4910,6 @@ class NEXORA {
         }
       });
 
-      // FILE INPUTS
       $("file-avatar").addEventListener("change", async (e) => {
         const f = e.target.files[0]; if (!f) return;
         try {
@@ -4963,13 +4935,11 @@ class NEXORA {
         } catch (err) { toast(err.message || "Ошибка", "error"); }
       });
 
-      // GLOBAL CLICK
       document.addEventListener("click", (e) => {
         if (!e.target.closest(".ctx-menu")) this.closeContextMenu();
         Sounds.unlock();
       });
 
-      // PARALLAX
       window.addEventListener("mousemove", (e) => {
         const x = (e.clientX / window.innerWidth - 0.5) * 20;
         const y = (e.clientY / window.innerHeight - 0.5) * 20;
@@ -4981,7 +4951,6 @@ class NEXORA {
         $("sidebar").classList.remove("hidden-mobile");
       }
 
-      // BOOT
       this.boot().catch(err => {
         console.error(err);
         toast("Ошибка запуска", "error");
@@ -4990,7 +4959,6 @@ class NEXORA {
       });
     };
 
-    // H12: module-скрипт может выполниться уже после DOMContentLoaded.
     if (document.readyState === "loading") {
       window.addEventListener("DOMContentLoaded", start, { once: true });
     } else {
