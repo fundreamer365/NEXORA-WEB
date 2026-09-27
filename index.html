@@ -216,16 +216,6 @@
 <div id="toast-container"></div>
 
 <script type="module" src="app.js"></script>
-<script>
-  if ("serviceWorker" in navigator) {
-    window.addEventListener("load", () => {
-      navigator.serviceWorker
-        .register("./sw.js")
-        .then((reg) => console.log("[NEXORA] SW registered:", reg.scope))
-        .catch((err) => console.warn("[NEXORA] SW reg failed:", err));
-    });
-  }
-</script>
 
 </body>
 </html>
