@@ -1,12 +1,12 @@
 /* ============================================================
    NEXORA Service Worker
-   Стратегия:
-   - Навигация и код (HTML/JS/CSS) — network-first (свежесть важнее).
+   - Навигация и код (HTML/JS/CSS) — network-first.
    - Статика (иконки, manifest, шрифты) — cache-first.
-   - Supabase API — не перехватываем вообще.
+   - Supabase API — не перехватываем.
+   - Push отключён (нет VAPID).
    ============================================================ */
 
-const CACHE = "nexora-v2";
+const CACHE = "nexora-v3";
 const CORE = [
   "./",
   "./index.html",
@@ -40,13 +40,9 @@ self.addEventListener("fetch", (e) => {
 
   const url = new URL(req.url);
 
-  // Supabase API — не перехватываем
   if (url.hostname.endsWith("supabase.co")) return;
-
-  // Внешние домены (CDN, шрифты и т.д.) — не перехватываем
   if (url.origin !== self.location.origin) return;
 
-  // Навигация — network-first
   if (req.mode === "navigate") {
     e.respondWith(
       fetch(req)
@@ -62,7 +58,6 @@ self.addEventListener("fetch", (e) => {
     return;
   }
 
-  // Код (HTML/JS/CSS) — network-first
   if (/\.(?:html|js|css)(?:\?|$)/i.test(url.pathname)) {
     e.respondWith(
       fetch(req)
@@ -78,7 +73,6 @@ self.addEventListener("fetch", (e) => {
     return;
   }
 
-  // Статика (иконки, шрифты, manifest) — cache-first
   if (CACHE_FIRST_EXT.test(url.pathname) || url.pathname.endsWith("manifest.json")) {
     e.respondWith(
       caches.match(req).then((hit) => {
@@ -95,7 +89,6 @@ self.addEventListener("fetch", (e) => {
     return;
   }
 
-  // Всё остальное — network с fallback на кэш
   e.respondWith(
     fetch(req)
       .then((res) => {
@@ -109,25 +102,7 @@ self.addEventListener("fetch", (e) => {
   );
 });
 
-/* --------- Push-уведомления (как было) --------- */
-self.addEventListener("push", (e) => {
-  let data = { title: "NEXORA", body: "Новое сообщение" };
-  try {
-    data = e.data.json();
-  } catch (_) {}
-  e.waitUntil(
-    self.registration.showNotification(data.title || "NEXORA", {
-      body: data.body || "",
-      icon: "assets/icon-192.png",
-      badge: "assets/icon-192.png",
-      data: data.url ? { url: data.url } : undefined,
-      vibrate: [100, 50, 100],
-      tag: data.tag || "nexora",
-      renotify: true,
-    })
-  );
-});
-
+/* --------- Клик по локальному уведомлению (из app.js) --------- */
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
   const target = (e.notification.data && e.notification.data.url) || "./";
