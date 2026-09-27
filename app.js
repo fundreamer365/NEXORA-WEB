@@ -1,6 +1,8 @@
 /* ============================================================
-   NEXORA v8.4 — единый app.js
-   Правки A: RLS chat_members ужесточён, локальные комнаты через RPC.
+   NEXORA v8.5 — единый app.js
+   Правки: A (RLS), B-3 (join_channel+token), C (poll-creator, SW),
+   оптимизация H2/H4/H5/H6, SVG-иконки, MEDIUM/LOW,
+   Realtime: chat_members, chats, reactions, custom_emojis.
    ============================================================ */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
@@ -26,7 +28,6 @@ const ATTACH_MAX = 50 * 1024 * 1024;
 const STICKER_MAX = 2 * 1024 * 1024;
 
 const POLL_MS = 20000;
-
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "🔥", "😮", "😢"];
 const TYPING_TIMEOUT_MS = 3000;
 const ACCOUNTS_KEY = "nexora-accounts";
@@ -34,6 +35,22 @@ const ACCOUNTS_KEY = "nexora-accounts";
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: true, autoRefreshToken: true, storageKey: "nexora-auth" },
 });
+
+/* ============================================================
+   SVG-ИКОНКИ
+   ============================================================ */
+const ICONS = {
+  inbox:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>',
+  search:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>',
+  globe:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="2" y1="12" x2="22" y2="12"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
+  users:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>',
+  plus:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>',
+  settings:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+  logout:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>',
+  channel: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>',
+  group:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>',
+  star:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
+};
 
 /* ============================================================
    UTIL
@@ -52,26 +69,36 @@ function safeUrl(u) {
   if (!/^https?:\/\//i.test(s)) return "";
   return s.replace(/"/g, "%22");
 }
+
+/* M3: локализация дат/времени */
+function _locale() {
+  const l = currentLocale();
+  return l === "ru" ? "ru-RU" : l === "uk" ? "uk-UA" : l === "kk" ? "kk-KZ" : l === "de" ? "de-DE" : l === "zh" ? "zh-CN" : "en-US";
+}
 function formatTime(iso) {
   try {
     const d = new Date(iso), now = new Date();
+    const loc = _locale();
     if (d.toDateString() === now.toDateString())
-      return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      return d.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" });
     const y = new Date(now); y.setDate(now.getDate() - 1);
-    if (d.toDateString() === y.toDateString())
-      return "Вчера " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-    return d.toLocaleDateString([], { day: "2-digit", month: "short" });
+    if (d.toDateString() === y.toDateString()) {
+      const yesterday = t("yesterday") || "Вчера";
+      return yesterday + " " + d.toLocaleTimeString(loc, { hour: "2-digit", minute: "2-digit" });
+    }
+    return d.toLocaleDateString(loc, { day: "2-digit", month: "short" });
   } catch { return ""; }
 }
 function formatDateLabel(iso) {
   const d = new Date(iso), now = new Date();
-  if (d.toDateString() === now.toDateString()) return "Сегодня";
+  const loc = _locale();
+  if (d.toDateString() === now.toDateString()) return t("today") || "Сегодня";
   const y = new Date(now); y.setDate(now.getDate() - 1);
-  if (d.toDateString() === y.toDateString()) return "Вчера";
-  return d.toLocaleDateString([], { day: "numeric", month: "long", year: "numeric" });
+  if (d.toDateString() === y.toDateString()) return t("yesterday") || "Вчера";
+  return d.toLocaleDateString(loc, { day: "numeric", month: "long", year: "numeric" });
 }
 function formatDateTime(iso) {
-  try { return new Date(iso).toLocaleString([], { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }); }
+  try { return new Date(iso).toLocaleString(_locale(), { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }); }
   catch { return ""; }
 }
 function humanSize(n) {
@@ -291,6 +318,17 @@ class NEXORA {
     this._chunks = [];
     this._voiceTimer = null;
 
+    /* Дебаунс-таймеры для Realtime-событий */
+    this._chatsReloadTimer = null;
+    this._membersReloadTimer = null;
+    this._pollsReloadTimer = null;
+
+    /* Глобальные каналы (живут всё время после логина) */
+    this._chMembersChannel = null;
+    this._chChatsChannel = null;
+    this._chReactionsChannel = null;
+    this._chEmojisChannel = null;
+
     this.bindGlobalEvents();
   }
 
@@ -436,6 +474,7 @@ class NEXORA {
     try { await this.setOnline(false); } catch (_) {}
     await supabase.auth.signOut();
     this.stopRealtime();
+    this.stopGlobalRealtime();
     this.stopPresence();
     this.stopPolling();
     this.user = null; this.profile = null;
@@ -656,6 +695,7 @@ class NEXORA {
     }
     await supabase.auth.signOut();
     this.stopRealtime();
+    this.stopGlobalRealtime();
     this.stopPresence();
     this.stopPolling();
     this.user = null; this.profile = null;
@@ -727,6 +767,11 @@ class NEXORA {
     await this.loadChatThemes(true);
     this.subscribeProfiles();
     this.subscribeGlobalMessages();
+    /* Новые глобальные подписки — real-time везде */
+    this.subscribeGlobalChatMembers();
+    this.subscribeGlobalChats();
+    this.subscribeGlobalReactions();
+    this.subscribeGlobalCustomEmojis();
     this.setupUnreadTitleUpdater();
     $("chat-view").classList.add("hidden");
     $("welcome").classList.remove("hidden");
@@ -861,11 +906,11 @@ class NEXORA {
       const typing = this.typingUsers[chat.id];
       const typers = typing ? Object.values(typing).filter(tt => Date.now() - tt.ts < TYPING_TIMEOUT_MS) : [];
       if (typers.length) sub = `<em>${escapeHtml(typers.map(tt => tt.name).join(", "))} печатает…</em>`;
-      let badge = "";
-      if (chat.is_notification) badge = "📩 ";
-      else if (chat.type === "channel") badge = "📢 ";
-      else if (chat.type === "group") badge = "👥 ";
-      else if (chat.type === "saved") badge = "⭐ ";
+      let badgeHTML = "";
+      if (chat.is_notification) badgeHTML = `<span class="list-item-badge-icon">${ICONS.inbox}</span>`;
+      else if (chat.type === "channel") badgeHTML = `<span class="list-item-badge-icon">${ICONS.channel}</span>`;
+      else if (chat.type === "group") badgeHTML = `<span class="list-item-badge-icon">${ICONS.group}</span>`;
+      else if (chat.type === "saved") badgeHTML = `<span class="list-item-badge-icon">${ICONS.star}</span>`;
       const botBadge = peer.is_bot ? ' <span class="bot-badge">[BOT]</span>' : "";
       const avatarUser = chat.type === "saved" && !chat.is_notification
         ? { username: "★" }
@@ -880,7 +925,7 @@ class NEXORA {
         ${avatarHTML(avatarUser, "md")}
         <div class="list-item-body">
           <div class="list-item-title">
-            <span>${escapeHtml(badge + title)}${botBadge}${chanTag}${ephTag}</span>
+            <span>${badgeHTML}${escapeHtml(title)}${botBadge}${chanTag}${ephTag}</span>
             <span class="time">${last ? formatTime(last.created_at) : ""}</span>
           </div>
           <div class="list-item-sub">${typers.length ? sub : escapeHtml(sub)}</div>
@@ -1129,10 +1174,11 @@ class NEXORA {
         this.updatePageTitle();
         return;
       }
+      const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
       const [{ data: chats }, { data: members }, { data: msgs }, { data: nicks }, { data: notifs }] = await Promise.all([
-        supabase.from("chats").select("id, is_group, title, type, description, avatar_url, updated_at, owner_id, username, is_public, invite_token, is_ephemeral, expires_at").in("id", ids),
+        supabase.from("chats").select("id, is_group, title, type, avatar_url, updated_at, owner_id, username, is_public, invite_token, is_ephemeral, expires_at").in("id", ids),
         supabase.from("chat_members").select("chat_id, user_id, role, profile:profiles!chat_members_user_id_fkey(id, username, nexora_id, avatar_url, is_online, show_online, is_bot)").in("chat_id", ids),
-        supabase.from("messages").select("chat_id, content, kind, created_at, sender_id, pinned").in("chat_id", ids).order("created_at", { ascending: false }).limit(300),
+        supabase.from("messages").select("chat_id, content, kind, created_at, sender_id").in("chat_id", ids).gte("created_at", thirtyDaysAgo).order("created_at", { ascending: false }).limit(500),
         supabase.from("contact_nicknames").select("contact_id, nickname").eq("owner_id", this.user.id),
         supabase.from("notification_chats").select("chat_id").eq("user_id", this.user.id),
       ]);
@@ -1155,7 +1201,7 @@ class NEXORA {
         else display = peer ? (peer.nickname || peer.username) : (c.title || "Chat");
         return {
           id: c.id, is_group: c.is_group, type: ctype,
-          title: c.title, description: c.description,
+          title: c.title,
           avatar_url: c.avatar_url, owner_id: c.owner_id,
           username: c.username, is_public: c.is_public, invite_token: c.invite_token,
           is_ephemeral: c.is_ephemeral, expires_at: c.expires_at,
@@ -1184,6 +1230,24 @@ class NEXORA {
       if (this.activeTab === "chats") this.renderSidebarList();
     }
   }
+
+  /* Дебаунс-обёртка для refreshChats (чтобы не штормило на Realtime) */
+  scheduleRefreshChats(delay = 300) {
+    clearTimeout(this._chatsReloadTimer);
+    this._chatsReloadTimer = setTimeout(() => {
+      this._chatsReloadTimer = null;
+      this.refreshChats().catch(() => {});
+    }, delay);
+  }
+  scheduleReloadMembers(delay = 200) {
+    if (!this.activeChat) return;
+    clearTimeout(this._membersReloadTimer);
+    this._membersReloadTimer = setTimeout(() => {
+      this._membersReloadTimer = null;
+      this.loadMembers().catch(() => {});
+    }, delay);
+  }
+
   async openDirectChat(peer) {
     try {
       const { data, error } = await supabase.rpc("get_or_create_direct_chat", { other_user: peer.id });
@@ -1233,11 +1297,11 @@ class NEXORA {
     $("welcome").classList.add("hidden");
     $("chat-view").classList.remove("hidden");
     const ctype = chat.type || "direct";
-    let badge = "";
-    if (chat.is_notification) badge = "📩 ";
-    else if (ctype === "channel") badge = "📢 ";
-    else if (ctype === "group") badge = "👥 ";
-    else if (ctype === "saved") badge = "⭐ ";
+    let badgeHTML = "";
+    if (chat.is_notification) badgeHTML = `<span class="list-item-badge-icon">${ICONS.inbox}</span>`;
+    else if (ctype === "channel") badgeHTML = `<span class="list-item-badge-icon">${ICONS.channel}</span>`;
+    else if (ctype === "group") badgeHTML = `<span class="list-item-badge-icon">${ICONS.group}</span>`;
+    else if (ctype === "saved") badgeHTML = `<span class="list-item-badge-icon">${ICONS.star}</span>`;
     const botTag = chat.peer?.is_bot ? ' <span class="bot-badge">[BOT]</span>' : "";
     let title;
     if (chat.is_notification) title = "NEXORA";
@@ -1252,7 +1316,7 @@ class NEXORA {
       const left = Math.max(0, Math.floor((new Date(chat.expires_at) - new Date()) / 60000));
       ephTag = `<span class="ephemeral-badge">⏳ ${left} мин</span>`;
     }
-    $("chat-peer-name").innerHTML = `${escapeHtml(badge + title)}${botTag}${chanTag}${ephTag}
+    $("chat-peer-name").innerHTML = `${badgeHTML}${escapeHtml(title)}${botTag}${chanTag}${ephTag}
       <span class="online-dot${this.isPeerOnline(chat) ? " online" : ""}"></span>`;
     if (chat.is_notification) $("chat-peer-sub").textContent = "Уведомления о входах в аккаунт";
     else if (ctype === "saved") $("chat-peer-sub").textContent = "Твои сохранённые сообщения";
@@ -1324,9 +1388,11 @@ class NEXORA {
   }
   async loadReactions() {
     try {
+      const ids = this.messages.map(m => m.id);
+      if (!ids.length) { this.reactions = {}; return; }
       const { data, error } = await supabase
-        .from("reactions").select("message_id, user_id, emoji, messages!inner(chat_id)")
-        .eq("messages.chat_id", this.activeChat.id);
+        .from("reactions").select("message_id, user_id, emoji")
+        .in("message_id", ids);
       if (error) throw error;
       const map = {};
       (data || []).forEach(r => {
@@ -1551,6 +1617,10 @@ class NEXORA {
         const chip = document.createElement("div");
         chip.className = "reaction-chip" + (rx[emoji].includes(this.user.id) ? " mine" : "");
         chip.textContent = `${emoji} ${rx[emoji].length}`;
+        chip.title = rx[emoji].length <= 5 ? rx[emoji].map(uid => {
+          const u = this.members.find(mm => mm.user_id === uid);
+          return u ? (u.username || "User") : "";
+        }).filter(Boolean).join(", ") : "";
         chip.addEventListener("click", () => this.toggleReaction(m.id, emoji));
         rbox.appendChild(chip);
       });
@@ -1611,12 +1681,27 @@ class NEXORA {
       if (poll.is_quiz && poll.correct_index === idx) optEl.classList.add("correct");
       if (poll.is_quiz && isVoted && poll.correct_index !== idx) optEl.classList.add("incorrect");
       const pct = totalVotes > 0 ? Math.round((counts[idx] / totalVotes) * 100) : 0;
+      /* M15: список проголосовавших (для неанонимных) */
+      let votersHTML = "";
+      if (!poll.is_anonymous) {
+        const voterNames = [];
+        Object.entries(poll.votes).forEach(([uid, voteArr]) => {
+          if ((voteArr || []).includes(idx)) {
+            const u = this.members.find(mm => mm.user_id === uid);
+            if (u) voterNames.push(u.nickname || u.username || "User");
+            else if (uid === this.user.id) voterNames.push("Ты");
+          }
+        });
+        if (voterNames.length) {
+          votersHTML = `<div class="poll-voters">${escapeHtml(voterNames.slice(0, 5).join(", "))}${voterNames.length > 5 ? " +" + (voterNames.length - 5) : ""}</div>`;
+        }
+      }
       optEl.innerHTML = `
         <div class="poll-option-bar" style="width:${pct}%"></div>
         <div class="poll-option-text">
           <span><span class="poll-checkbox"></span>${escapeHtml(opt)}</span>
           <span class="poll-option-pct">${pct}%</span>
-        </div>`;
+        </div>${votersHTML}`;
       optEl.addEventListener("click", async () => {
         if (poll.closed) return toast("Опрос закрыт", "warning");
         let newVote;
@@ -1686,12 +1771,6 @@ class NEXORA {
       a.controls = true; a.src = m.attachment_url;
       a.style.cssText = "max-width:280px;margin:4px 0";
       el.appendChild(a);
-      if ((m.content || "").trim() && m.content !== "[голосовое]") {
-        const c = document.createElement("div");
-        c.style.cssText = "font-size:12px;color:var(--text-2);font-style:italic;margin-top:4px";
-        c.textContent = m.content;
-        el.appendChild(c);
-      }
       return;
     }
     if (kind === "file" && m.attachment_url) {
@@ -1872,7 +1951,7 @@ class NEXORA {
         sorted.forEach(c => {
           const row = document.createElement("div");
           row.className = "settings-row"; row.style.cursor = "pointer";
-          const label = c.is_notification ? "📩 NEXORA" : c.type === "saved" ? "⭐ Избранное" : c.display_title;
+          const label = c.is_notification ? "NEXORA" : c.type === "saved" ? "Избранное" : c.display_title;
           const desc = c.is_notification ? "уведомления" : c.type === "saved" ? "сохранённые сообщения" : c.type;
           row.innerHTML = `<div class="settings-row-info">
             <div class="settings-row-label">${escapeHtml(label)}</div>
@@ -1933,7 +2012,7 @@ class NEXORA {
         this.paintMessageWindow();
       }
       this.hideReplyPreview();
-      this.refreshChats().catch(() => {});
+      this.scheduleRefreshChats();
       Sounds.send();
       this.maybeBotReply(data);
       setTimeout(() => this.checkStrangerBanner(), 200);
@@ -2342,7 +2421,7 @@ class NEXORA {
   }
 
   /* ============================================================
-     VOICE RECORDING
+     VOICE RECORDING (без транскрипта — SpeechRecognition не работает с blob)
      ============================================================ */
   async toggleVoiceRecording() {
     if (this._recorder && this._recorder.state === "recording") {
@@ -2390,11 +2469,9 @@ class NEXORA {
         .upload(path, buffer, { contentType: "audio/webm", upsert: false });
       if (upErr) throw upErr;
       const { data: pub } = supabase.storage.from(ATTACH_BUCKET).getPublicUrl(path);
-      let transcript = "";
-      try { transcript = await this.transcribeAudio(blob); } catch (_) {}
       const payload = {
         chat_id: this.activeChat.id, sender_id: this.user.id,
-        content: transcript || "[голосовое]", kind: "voice",
+        content: "[голосовое]", kind: "voice",
         attachment_url: pub.publicUrl, attachment_type: "voice",
         file_name: "voice.webm", file_size: blob.size,
       };
@@ -2405,30 +2482,8 @@ class NEXORA {
         this.paintMessageWindow();
       }
       Sounds.send();
-      toast(transcript ? "Голосовое отправлено + расшифровано" : "Голосовое отправлено", "success");
+      toast("Голосовое отправлено", "success");
     } catch (e) { toast("Ошибка голосового: " + (e.message || ""), "error"); }
-  }
-  async transcribeAudio(blob) {
-    if (!window.SpeechRecognition && !window.webkitSpeechRecognition) return "";
-    return new Promise((resolve) => {
-      const Ctor = window.SpeechRecognition || window.webkitSpeechRecognition;
-      const rec = new Ctor();
-      rec.lang = currentLocale();
-      rec.continuous = true;
-      rec.interimResults = false;
-      let finalText = "";
-      rec.onresult = (e) => {
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          if (e.results[i].isFinal) finalText += e.results[i][0].transcript + " ";
-        }
-      };
-      rec.onerror = () => { rec.stop(); resolve(finalText.trim()); };
-      rec.onend = () => resolve(finalText.trim());
-      const audio = new Audio(URL.createObjectURL(blob));
-      audio.play().then(() => rec.start()).catch(() => resolve(""));
-      audio.onended = () => { try { rec.stop(); } catch (_) {} };
-      setTimeout(() => { try { rec.stop(); } catch (_) {} }, 60000);
-    });
   }
 
   /* ============================================================
@@ -2516,13 +2571,13 @@ class NEXORA {
         this.messages.push(data); this.paintMessageWindow();
       }
       this.hideReplyPreview();
-      this.refreshChats().catch(() => {});
+      this.scheduleRefreshChats();
       Sounds.send();
     } catch (e) { console.error(e); toast("Ошибка стикера", "error"); }
   }
 
   /* ============================================================
-     REALTIME
+     REALTIME — АКТИВНЫЙ ЧАТ
      ============================================================ */
   subscribeChat(chatId) {
     this.realtimeChannel = supabase.channel("chat:" + chatId)
@@ -2561,8 +2616,12 @@ class NEXORA {
   }
   async reloadPollsSafe() {
     if (!this.activeChat) return;
-    await this.loadPolls();
-    this.paintMessageWindow();
+    clearTimeout(this._pollsReloadTimer);
+    this._pollsReloadTimer = setTimeout(async () => {
+      if (!this.activeChat) return;
+      await this.loadPolls();
+      this.paintMessageWindow();
+    }, 250);
   }
   broadcastTyping() {
     if (!this.typingChannel || !this.activeChat) return;
@@ -2591,6 +2650,17 @@ class NEXORA {
       sub.classList.remove("typing");
     }
   }
+  stopRealtime() {
+    if (this.realtimeChannel) { supabase.removeChannel(this.realtimeChannel); this.realtimeChannel = null; }
+    if (this.typingChannel) { supabase.removeChannel(this.typingChannel); this.typingChannel = null; }
+    if (this.pollsChannel) { supabase.removeChannel(this.pollsChannel); this.pollsChannel = null; }
+    clearTimeout(this._pollsReloadTimer);
+    this._pollsReloadTimer = null;
+  }
+
+  /* ============================================================
+     REALTIME — ГЛОБАЛЬНЫЕ ПОДПИСКИ (живут всё время сессии)
+     ============================================================ */
   subscribeProfiles() {
     supabase.channel("profiles-watch")
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles" },
@@ -2603,20 +2673,101 @@ class NEXORA {
         const m = p.new;
         if (!m || m.sender_id === this.user.id) return;
         if (this.activeChat && m.chat_id === this.activeChat.id) return;
-        this.refreshChats().catch(() => {});
+        this.scheduleRefreshChats();
         const chat = this.chats.find(c => c.id === m.chat_id);
         const title = chat?.display_title || "NEXORA";
         this.notify(title, m.content || "Новое сообщение");
         Sounds.message();
       })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages" }, (p) => {
+        const m = p.new;
+        if (!m) return;
+        /* Обновление последнего сообщения в списке чатов (если редактировали) */
+        this.scheduleRefreshChats(500);
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "messages" }, (p) => {
+        const m = p.old;
+        if (!m) return;
+        this.scheduleRefreshChats(500);
+      })
       .on("postgres_changes", { event: "*", schema: "public", table: "chat_reads" },
         () => this.loadReadsByOther())
       .subscribe();
   }
-  stopRealtime() {
-    if (this.realtimeChannel) { supabase.removeChannel(this.realtimeChannel); this.realtimeChannel = null; }
-    if (this.typingChannel) { supabase.removeChannel(this.typingChannel); this.typingChannel = null; }
-    if (this.pollsChannel) { supabase.removeChannel(this.pollsChannel); this.pollsChannel = null; }
+  subscribeGlobalChatMembers() {
+    if (this._chMembersChannel) supabase.removeChannel(this._chMembersChannel);
+    this._chMembersChannel = supabase.channel("global-chat-members")
+      .on("postgres_changes", { event: "*", schema: "public", table: "chat_members" }, (p) => {
+        /* Нас добавили/удалили/сменили роль в чате */
+        this.scheduleRefreshChats(400);
+        if (this.activeChat && p.new && p.new.chat_id === this.activeChat.id) {
+          this.scheduleReloadMembers(300);
+        }
+        if (this.activeChat && p.old && p.old.chat_id === this.activeChat.id) {
+          this.scheduleReloadMembers(300);
+        }
+      })
+      .subscribe();
+  }
+  subscribeGlobalChats() {
+    if (this._chChatsChannel) supabase.removeChannel(this._chChatsChannel);
+    this._chChatsChannel = supabase.channel("global-chats")
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "chats" }, () => {
+        /* Изменилось название/описание/is_public/username/invite_token — обновим список */
+        this.scheduleRefreshChats(400);
+      })
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "chats" }, () => {
+        this.scheduleRefreshChats(400);
+      })
+      .subscribe();
+  }
+  subscribeGlobalReactions() {
+    if (this._chReactionsChannel) supabase.removeChannel(this._chReactionsChannel);
+    this._chReactionsChannel = supabase.channel("global-reactions")
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "reactions" }, (p) => {
+        const r = p.new;
+        if (!r) return;
+        /* Обновляем только если это сообщение из активного чата */
+        if (!this.messages.find(m => m.id === r.message_id)) return;
+        if (!this.reactions[r.message_id]) this.reactions[r.message_id] = {};
+        if (!this.reactions[r.message_id][r.emoji]) this.reactions[r.message_id][r.emoji] = [];
+        if (!this.reactions[r.message_id][r.emoji].includes(r.user_id)) {
+          this.reactions[r.message_id][r.emoji].push(r.user_id);
+        }
+        this.paintMessageWindow();
+      })
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "reactions" }, (p) => {
+        const r = p.old;
+        if (!r) return;
+        if (!this.messages.find(m => m.id === r.message_id)) return;
+        const bucket = this.reactions[r.message_id]?.[r.emoji];
+        if (bucket) {
+          const idx = bucket.indexOf(r.user_id);
+          if (idx >= 0) bucket.splice(idx, 1);
+          if (!bucket.length) delete this.reactions[r.message_id][r.emoji];
+        }
+        this.paintMessageWindow();
+      })
+      .subscribe();
+  }
+  subscribeGlobalCustomEmojis() {
+    if (this._chEmojisChannel) supabase.removeChannel(this._chEmojisChannel);
+    this._chEmojisChannel = supabase.channel("global-custom-emojis")
+      .on("postgres_changes", { event: "*", schema: "public", table: "custom_emojis" }, () => {
+        /* Пикер эмодзи подтянет свежие данные при следующем открытии.
+           Если открыт пак-редактор — оставим как есть, там свой список. */
+      })
+      .subscribe();
+  }
+  stopGlobalRealtime() {
+    if (this._chMembersChannel) { supabase.removeChannel(this._chMembersChannel); this._chMembersChannel = null; }
+    if (this._chChatsChannel) { supabase.removeChannel(this._chChatsChannel); this._chChatsChannel = null; }
+    if (this._chReactionsChannel) { supabase.removeChannel(this._chReactionsChannel); this._chReactionsChannel = null; }
+    if (this._chEmojisChannel) { supabase.removeChannel(this._chEmojisChannel); this._chEmojisChannel = null; }
+    clearTimeout(this._chatsReloadTimer);
+    clearTimeout(this._membersReloadTimer);
+    this._chatsReloadTimer = null;
+    this._membersReloadTimer = null;
   }
   onRealtimeInsert(m) {
     if (!this.activeChat || m.chat_id !== this.activeChat.id) return;
@@ -2642,11 +2793,11 @@ class NEXORA {
     if (this.activePeer && this.activePeer.id === p.id) {
       Object.assign(this.activePeer, p);
       if (this.activeChat) {
-        const badge = this.activeChat.type === "channel" ? "📢 " :
-                      this.activeChat.type === "group" ? "👥 " :
-                      this.activeChat.type === "saved" ? "⭐ " : "";
+        const badgeHTML = this.activeChat.type === "channel" ? `<span class="list-item-badge-icon">${ICONS.channel}</span>` :
+                          this.activeChat.type === "group" ? `<span class="list-item-badge-icon">${ICONS.group}</span>` :
+                          this.activeChat.type === "saved" ? `<span class="list-item-badge-icon">${ICONS.star}</span>` : "";
         const botTag = this.activePeer.is_bot ? ' <span class="bot-badge">[BOT]</span>' : "";
-        $("chat-peer-name").innerHTML = `${escapeHtml(badge + (this.activeChat.display_title || p.username))}${botTag}
+        $("chat-peer-name").innerHTML = `${badgeHTML}${escapeHtml(this.activeChat.display_title || p.username)}${botTag}
           <span class="online-dot${this.isPeerOnline(this.activeChat) ? " online" : ""}"></span>`;
       }
     }
@@ -3105,7 +3256,6 @@ class NEXORA {
                     </div>
                   </div>`;
                 card.addEventListener("click", async () => {
-                  /* A: через join_local_room, чтобы обойти ужесточённый RLS */
                   try {
                     await supabase.rpc("join_local_room", { p_chat_id: r.chat_id });
                   } catch (_) {}
@@ -3167,7 +3317,6 @@ class NEXORA {
             const { data: roomRow } = await supabase
               .from("local_rooms").select("chat_id").eq("id", data).single();
             if (roomRow) {
-              /* A: через join_local_room, чтобы обойти ужесточённый RLS */
               try {
                 await supabase.rpc("join_local_room", { p_chat_id: roomRow.chat_id });
               } catch (_) {}
@@ -3255,7 +3404,7 @@ class NEXORA {
           const card = document.createElement("div");
           card.className = "catalog-card";
           card.innerHTML = `
-            <div class="catalog-avatar">📢</div>
+            <div class="catalog-avatar">${ICONS.channel}</div>
             <div class="catalog-body">
               <div class="catalog-title">${escapeHtml(c.title || "")}
                 <span class="channel-badge public">public</span>
@@ -3727,7 +3876,7 @@ class NEXORA {
         about.innerHTML = `<h3>ℹ ${t("aboutApp")}</h3>
           <div style="color:var(--text-0);font-weight:700">NEXORA</div>
           <div style="color:var(--text-2);font-size:13px;margin-top:4px">Connect without limits.</div>
-          <div style="color:var(--text-3);font-size:12px;margin-top:6px">Version 8.4</div>`;
+          <div style="color:var(--text-3);font-size:12px;margin-top:6px">Version 8.5</div>`;
         body.appendChild(about);
 
         const out = document.createElement("button");
@@ -4013,7 +4162,7 @@ class NEXORA {
         const online = !isBot && card.is_online && card.show_online !== false;
         const lastSeen = card.last_seen ? formatTime(card.last_seen) : "";
         const created = card.created_at ? new Date(card.created_at) : null;
-        const createdStr = created ? created.toLocaleDateString([], { day: "numeric", month: "long", year: "numeric" }) : "";
+        const createdStr = created ? created.toLocaleDateString(_locale(), { day: "numeric", month: "long", year: "numeric" }) : "";
         body.innerHTML = "";
         const cardEl = document.createElement("div");
         cardEl.className = "profile-card";
@@ -4311,7 +4460,7 @@ class NEXORA {
       body: (body) => {
         body.innerHTML = `
           <div class="profile-hero">
-            <div class="avatar avatar-lg">📢</div>
+            <div class="avatar avatar-lg">${ICONS.channel}</div>
             <div class="profile-hero-name">${escapeHtml(chat.title || "")}</div>
             <div class="profile-id-badge">${chat.username ? "@" + escapeHtml(chat.username) : "приватный"}</div>
           </div>
@@ -4349,7 +4498,7 @@ class NEXORA {
       body: (body) => {
         body.innerHTML = `
           <div class="profile-hero">
-            <div class="avatar avatar-lg">👥</div>
+            <div class="avatar avatar-lg">${ICONS.group}</div>
             <div class="profile-hero-name">${escapeHtml(chat.title || "")}</div>
             <div class="profile-id-badge">${chat.username ? "@" + escapeHtml(chat.username) : "приватная"}</div>
           </div>
@@ -4713,7 +4862,7 @@ class NEXORA {
     card.className = "user-card";
     const pubTag = ch.is_public ? "public" : "private";
     const unameLine = ch.username ? `@${escapeHtml(ch.username)}` : "(приватный)";
-    const kind = ch.type === "group" ? "👥" : "📢";
+    const kind = ch.type === "group" ? ICONS.group : ICONS.channel;
     card.innerHTML = `
       <div class="avatar avatar-md">${kind}</div>
       <div class="user-card-body">
