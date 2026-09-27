@@ -2,10 +2,10 @@
   "name": "NEXORA",
   "short_name": "NEXORA",
   "description": "Connect without limits.",
-  "start_url": "./index.html",
+  "start_url": "./",
   "scope": "./",
   "display": "standalone",
-  "orientation": "portrait",
+  "orientation": "any",
   "background_color": "#0a0a0f",
   "theme_color": "#7c5cff",
   "icons": [
