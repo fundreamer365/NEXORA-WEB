@@ -1,7 +1,8 @@
 /* ============================================================
-   NEXORA v8.2 — единый app.js
+   NEXORA v8.3 — единый app.js
    Правки C: poll-creator, SW/этап C, DOMContentLoaded, polling,
    stopPolling при logout, refreshChats без дублей, deep links.
+   Правки B-3: приватный вход через join_channel(p_chat_id, p_invite_token).
    ============================================================ */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
@@ -2092,9 +2093,6 @@ class NEXORA {
             Sounds.success();
             toast("Опрос создан", "success");
 
-            // RPC возвращает либо poll_id, либо message_id.
-            // Подстраховываемся: если вернулся message_id — добавим в this.messages;
-            // если poll_id — просто перезагрузим сообщения и опросы.
             try {
               const { data: msgs } = await supabase
                 .from("messages")
@@ -2959,12 +2957,12 @@ class NEXORA {
               } catch (e) { toast(e.message || "Ошибка", "error"); }
             }
           } else {
-            /* C4: временно прямой insert до этапа B (join_channel с токеном).
-               После этапа B — заменить на join_channel с p_invite_token. */
+            /* B-3: приватный вход — только через join_channel с токеном. */
             if (confirm(`Присоединиться к приватному «${ch.title}»?`)) {
               try {
-                await supabase.from("chat_members").insert({
-                  chat_id: ch.id, user_id: this.user.id, role: "member",
+                await supabase.rpc("join_channel", {
+                  p_chat_id: ch.id,
+                  p_invite_token: chan,
                 });
                 await this.refreshChats();
                 await this.openChatById(ch.id);
@@ -3741,7 +3739,7 @@ class NEXORA {
         about.innerHTML = `<h3>ℹ ${t("aboutApp")}</h3>
           <div style="color:var(--text-0);font-weight:700">NEXORA</div>
           <div style="color:var(--text-2);font-size:13px;margin-top:4px">Connect without limits.</div>
-          <div style="color:var(--text-3);font-size:12px;margin-top:6px">Version 8.2</div>`;
+          <div style="color:var(--text-3);font-size:12px;margin-top:6px">Version 8.3</div>`;
         body.appendChild(about);
 
         const out = document.createElement("button");
@@ -4751,11 +4749,13 @@ class NEXORA {
           await this.openChatById(ch.id);
         } catch (e) { toast(e.message || "Ошибка", "error"); }
       } else {
-        /* C4: временно прямой insert до этапа B (join_channel с токеном).
-           После этапа B — заменить на join_channel с p_invite_token. */
+        /* B-3: приватный вход — только через join_channel с токеном.
+           find_channel возвращает invite_token — используем его. */
         try {
-          const { error } = await supabase.from("chat_members").insert({
-            chat_id: ch.id, user_id: this.user.id, role: "member",
+          const token = ch.invite_token || null;
+          const { error } = await supabase.rpc("join_channel", {
+            p_chat_id: ch.id,
+            p_invite_token: token,
           });
           if (error) throw error;
           toast("Присоединились", "success");
