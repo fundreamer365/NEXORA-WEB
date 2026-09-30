@@ -1,12 +1,12 @@
 /* ============================================================
-   NEXORA v9.0 — единый app.js
-   Этап 1: emoji/sticker picker, reaction picker + voter panel,
-   удаление у себя / у всех (soft delete + realtime + анимация),
-   полноценная карточка профиля, статусы, настройки уведомлений,
-   соц-ссылки, исправление комментариев канала.
-   Сохранено: A (RLS), B-3 (join_channel+token), C (poll-creator,
-   SW, оптимизация, SVG-иконки, realtime chat_members/chats/
-   reactions/custom_emojis).
+   NEXORA v9.2 — единый app.js
+   Включено:
+   - v8.5 базовые правки (A RLS, B-3 join_channel, C poll/SW);
+   - v9.0 этап 1 (picker, reactions, удаление, профиль, статусы,
+     соц-ссылки, комментарии канала, realtime везде);
+   - v9.1 этап 2 (audio/video players, live voice waveform);
+   - v9.2 этап 4 (Communities: rail, каналы, роли, права,
+     приглашения, сообщения, участники, realtime).
    ============================================================ */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
@@ -57,6 +57,9 @@ const ICONS = {
   channel: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l19-9-9 19-2-8-8-2z"/></svg>',
   group:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>',
   star:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>',
+  comm:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>',
+  hash:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="4" y1="9" x2="20" y2="9"/><line x1="4" y1="15" x2="20" y2="15"/><line x1="10" y1="3" x2="8" y2="21"/><line x1="16" y1="3" x2="14" y2="21"/></svg>',
+  volume:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>',
 };
 
 /* ============================================================
@@ -82,20 +85,17 @@ const SOCIAL_META = {
   dribbble:         { label: "Dribbble",         icon: "●", color: "#ea4c89", placeholder: "https://dribbble.com/username" },
 };
 
-/* ============================================================
-   BADGE EMOJI (built-in animated-friendly SVG-ish set)
-   ============================================================ */
 const BADGE_EMOJIS = [
   "🔥","⚡","🌀","💎","🎮","🎧","🎨","🚀","🌙","⭐","❄","🌸",
   "🍕","☕","💜","🖤","🐱","🐉","🦊","🎯","🏆","🛡","⚔","🌈",
 ];
 
 /* ============================================================
-   EMOJI PICKER — КАТАЛОГ
+   EMOJI
    ============================================================ */
 const EMOJI_CATEGORIES = {
   "Часто используемые": ["👍","❤️","😂","🔥","😮","😢","🙏","🎉","👀","💯","✨","🤔"],
-  "Смайлы": ["😀","😃","😄","😁","😆","😅","🤣","😂","🙂","🙃","😉","😊","😇","🥰","😍","🤩","😘","😋","😜","🤪","🤔","🤨","😐","😴","😷","🤒","🥳","😎","🤓","😕","😟","😭","😱","😡","🥺","😤","🤯","🥵","🥶","😇"],
+  "Смайлы": ["😀","😃","😄","😁","😆","😅","🤣","😂","🙂","🙃","😉","😊","😇","🥰","😍","🤩","😘","😋","😜","🤪","🤔","🤨","😐","😴","😷","🤒","🥳","😎","🤓","😕","😟","😭","😱","😡","🥺","😤","🤯","🥵","🥶"],
   "Жесты": ["👋","🤚","✋","🖖","👌","✌️","🤞","🤟","🤘","🤙","👈","👉","👆","👇","☝️","👍","👎","✊","👊","👏","🙌","🤲","🤝","🙏","💪","🦾","🫶"],
   "Сердца": ["❤️","🧡","💛","💚","💙","💜","🖤","🤍","🤎","💔","❣️","💕","💞","💓","💗","💖","💘","💝","💟"],
   "Животные": ["🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯","🦁","🐮","🐷","🐸","🐵","🙈","🙉","🙊","🐒","🐔","🐧","🐦","🐤","🦄","🐝","🦋","🐢","🐙","🦑","🐳"],
@@ -204,7 +204,6 @@ function toast(message, kind = "info", title = null) {
   setTimeout(() => { el.style.opacity = "0"; setTimeout(() => el.remove(), 250); }, 3200);
 }
 
-/* --- localStorage helpers --- */
 function lsGet(key, fallback) {
   try { return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback)); }
   catch { return fallback; }
@@ -220,7 +219,6 @@ function pushRecent(key, value, max = 24) {
   lsSet(key, list.slice(0, max));
 }
 
-/* --- badge/status --- */
 const STATUS_META = {
   online:    { label: "В сети",       color: "#3ddc84", symbol: "" },
   dnd:       { label: "Не беспокоить", color: "#ff5a6e", symbol: "🌙" },
@@ -260,7 +258,7 @@ function paintAvatar(el, user) {
 }
 
 /* ============================================================
-   SYSTEM STICKERS (SVG)
+   SYSTEM STICKERS
    ============================================================ */
 const SYSTEM_STICKERS = [
   { id: "sys-heart", name: "Heart", url: svgEmoji("❤️") },
@@ -340,18 +338,1403 @@ class SoundEngine {
 }
 const Sounds = new SoundEngine();
 
-const BOT_COMMANDS = {
-  "/help": "Доступные команды:\n/newbot — создать своего бота\n/mybots — список моих ботов\n/time — текущее время\n/roll 6 — случайное число от 1 до N\n/echo текст — вернуть текст\n/ping — pong",
-  "/ping": "pong 🏓",
-  "/time": () => `Сейчас ${new Date().toLocaleString()}`,
-  "/roll": (args) => {
-    const n = Math.max(1, Math.min(1_000_000, parseInt(args[0] || "6", 10) || 6));
-    return `🎲 ${Math.floor(Math.random() * n) + 1} (из ${n})`;
-  },
-  "/echo": (args) => args.join(" ") || "(пусто)",
-  "/newbot": () => "Открываю мастер создания бота…",
-  "/mybots": () => "Открываю список ботов…",
+/* ============================================================
+   AUDIO PLAYER WIDGET
+   ============================================================ */
+class AudioPlayerWidget {
+  constructor(url, { fileName = "", fileSize = 0, compact = false } = {}) {
+    this.url = url;
+    this.fileName = fileName;
+    this.fileSize = fileSize;
+    this.compact = compact;
+    this.audio = null;
+    this.el = null;
+    this.bars = [];
+  }
+  _seedBars(count = 48) {
+    let h = 0;
+    for (let i = 0; i < this.url.length; i++) h = (h * 31 + this.url.charCodeAt(i)) | 0;
+    const bars = [];
+    let state = h || 1;
+    for (let i = 0; i < count; i++) {
+      state = (state * 1664525 + 1013904223) | 0;
+      const v = ((state >>> 16) & 0x7fff) / 0x7fff;
+      bars.push(0.25 + v * 0.75);
+    }
+    return bars;
+  }
+  render() {
+    const el = document.createElement("div");
+    el.className = "ap" + (this.compact ? " ap-compact" : "");
+    el.innerHTML = `
+      <button class="ap-play" type="button" aria-label="Play">
+        <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20"/></svg>
+      </button>
+      <div class="ap-body">
+        <div class="ap-waveform"></div>
+        <div class="ap-meta">
+          <span class="ap-time">0:00</span>
+          <span class="ap-sep">·</span>
+          <span class="ap-dur">0:00</span>
+          ${this.fileName ? `<span class="ap-sep">·</span><span class="ap-name">${escapeHtml(this.fileName)}</span>` : ""}
+          ${this.fileSize ? `<span class="ap-sep">·</span><span class="ap-size">${escapeHtml(humanSize(this.fileSize))}</span>` : ""}
+        </div>
+      </div>
+      <button class="ap-speed" type="button" aria-label="Speed">1x</button>
+    `;
+    this.el = el;
+    this.audio = new Audio();
+    this.audio.preload = "metadata";
+    this.audio.src = this.url;
+    const wf = el.querySelector(".ap-waveform");
+    this.bars = this._seedBars(48);
+    this.bars.forEach((v) => {
+      const b = document.createElement("span");
+      b.style.height = (v * 100) + "%";
+      wf.appendChild(b);
+    });
+    const playBtn = el.querySelector(".ap-play");
+    const speedBtn = el.querySelector(".ap-speed");
+    const durEl = el.querySelector(".ap-dur");
+    const timeEl = el.querySelector(".ap-time");
+    const fmt = (s) => {
+      if (!isFinite(s)) return "0:00";
+      const m = Math.floor(s / 60);
+      const ss = String(Math.floor(s % 60)).padStart(2, "0");
+      return `${m}:${ss}`;
+    };
+    this.audio.addEventListener("loadedmetadata", () => { durEl.textContent = fmt(this.audio.duration); });
+    this.audio.addEventListener("timeupdate", () => {
+      timeEl.textContent = fmt(this.audio.currentTime);
+      const pct = this.audio.duration ? this.audio.currentTime / this.audio.duration : 0;
+      this._paint(pct);
+    });
+    this.audio.addEventListener("play", () => {
+      playBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
+    });
+    this.audio.addEventListener("pause", () => {
+      playBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20"/></svg>';
+    });
+    this.audio.addEventListener("ended", () => {
+      this.audio.currentTime = 0; this._paint(0); timeEl.textContent = "0:00";
+    });
+    playBtn.addEventListener("click", () => {
+      if (this.audio.paused) this.audio.play().catch(() => {});
+      else this.audio.pause();
+    });
+    speedBtn.addEventListener("click", () => {
+      const rates = [1, 1.5, 2, 0.5];
+      const idx = rates.indexOf(this.audio.playbackRate);
+      const next = rates[(idx + 1) % rates.length];
+      this.audio.playbackRate = next;
+      speedBtn.textContent = next + "x";
+    });
+    wf.addEventListener("click", (e) => {
+      const r = wf.getBoundingClientRect();
+      const pct = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+      if (this.audio.duration) { this.audio.currentTime = pct * this.audio.duration; this._paint(pct); }
+    });
+    return el;
+  }
+  _paint(pct) {
+    if (!this.el) return;
+    const wf = this.el.querySelector(".ap-waveform");
+    const bars = wf.children;
+    const active = Math.floor(bars.length * pct);
+    for (let i = 0; i < bars.length; i++) bars[i].classList.toggle("active", i < active);
+  }
+}
+
+/* ============================================================
+   VIDEO PLAYER WIDGET
+   ============================================================ */
+class VideoPlayerWidget {
+  constructor(url, { fileName = "", fileSize = 0, poster = "" } = {}) {
+    this.url = url;
+    this.fileName = fileName;
+    this.fileSize = fileSize;
+    this.poster = poster;
+    this.el = null;
+    this.video = null;
+  }
+  render() {
+    const el = document.createElement("div");
+    el.className = "vp";
+    el.innerHTML = `
+      <video preload="metadata" playsinline ${this.poster ? `poster="${safeUrl(this.poster)}"` : ""}></video>
+      <div class="vp-controls">
+        <button class="vp-play" type="button" aria-label="Play">
+          <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20"/></svg>
+        </button>
+        <div class="vp-bar"><div class="vp-progress"></div></div>
+        <span class="vp-time">0:00 / 0:00</span>
+        <button class="vp-mute" type="button" aria-label="Mute">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+        </button>
+        <button class="vp-full" type="button" aria-label="Fullscreen">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+        </button>
+        <a class="vp-dl" href="${safeUrl(this.url)}" download="${escapeHtml(this.fileName || "video")}" target="_blank" rel="noopener noreferrer" aria-label="Download">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </a>
+      </div>
+    `;
+    this.el = el;
+    this.video = el.querySelector("video");
+    this.video.src = this.url;
+    const playBtn = el.querySelector(".vp-play");
+    const muteBtn = el.querySelector(".vp-mute");
+    const fullBtn = el.querySelector(".vp-full");
+    const bar = el.querySelector(".vp-bar");
+    const prog = el.querySelector(".vp-progress");
+    const timeEl = el.querySelector(".vp-time");
+    const fmt = (s) => {
+      if (!isFinite(s)) return "0:00";
+      const m = Math.floor(s / 60);
+      const ss = String(Math.floor(s % 60)).padStart(2, "0");
+      return `${m}:${ss}`;
+    };
+    this.video.addEventListener("loadedmetadata", () => { timeEl.textContent = `0:00 / ${fmt(this.video.duration)}`; });
+    this.video.addEventListener("timeupdate", () => {
+      const pct = this.video.duration ? (this.video.currentTime / this.video.duration) * 100 : 0;
+      prog.style.width = pct + "%";
+      timeEl.textContent = `${fmt(this.video.currentTime)} / ${fmt(this.video.duration)}`;
+    });
+    this.video.addEventListener("play", () => {
+      playBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>';
+    });
+    this.video.addEventListener("pause", () => {
+      playBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6 4 20 12 6 20"/></svg>';
+    });
+    this.video.addEventListener("ended", () => {
+      prog.style.width = "0%";
+      timeEl.textContent = `0:00 / ${fmt(this.video.duration)}`;
+    });
+    playBtn.addEventListener("click", () => {
+      if (this.video.paused) this.video.play().catch(() => {});
+      else this.video.pause();
+    });
+    this.video.addEventListener("click", () => {
+      if (this.video.paused) this.video.play().catch(() => {});
+      else this.video.pause();
+    });
+    muteBtn.addEventListener("click", () => {
+      this.video.muted = !this.video.muted;
+      muteBtn.classList.toggle("muted", this.video.muted);
+    });
+    fullBtn.addEventListener("click", () => {
+      if (document.fullscreenElement) document.exitFullscreen();
+      else if (this.video.requestFullscreen) this.video.requestFullscreen();
+      else if (this.video.webkitEnterFullscreen) this.video.webkitEnterFullscreen();
+    });
+    bar.addEventListener("click", (e) => {
+      const r = bar.getBoundingClientRect();
+      const pct = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+      if (this.video.duration) this.video.currentTime = pct * this.video.duration;
+    });
+    if ("IntersectionObserver" in window) {
+      const io = new IntersectionObserver((entries) => {
+        entries.forEach(en => { if (!en.isIntersecting && !this.video.paused) this.video.pause(); });
+      }, { threshold: 0.1 });
+      setTimeout(() => io.observe(this.video), 100);
+    }
+    return el;
+  }
+}
+
+/* ============================================================
+   COMMUNITY PERMISSIONS
+   ============================================================ */
+const COMMUNITY_PERMS = {
+  manage_community: { label: "Управление сообществом", desc: "Название, описание, аватар, баннер" },
+  manage_channels:  { label: "Управление каналами",    desc: "Создание, удаление, переименование" },
+  manage_roles:     { label: "Управление ролями",      desc: "Создание и изменение ролей" },
+  manage_members:   { label: "Управление участниками", desc: "Кик, назначение ролей" },
+  create_invites:   { label: "Создание приглашений",   desc: "Invite-ссылки в сообщество" },
+  send_messages:    { label: "Отправка сообщений",     desc: "Писать в текстовые каналы" },
+  delete_messages:  { label: "Удаление сообщений",     desc: "Удалять чужие сообщения" },
+  connect_voice:    { label: "Голосовые каналы",       desc: "Заходить в голосовые" },
 };
+
+/* ============================================================
+   COMMUNITY MANAGER
+   ============================================================ */
+class CommunityManager {
+  constructor(app) {
+    this.app = app;
+    this.communities = [];
+    this.activeCommunity = null;
+    this.activeChannel = null;
+    this.channels = [];
+    this.categories = [];
+    this.members = [];
+    this.roles = [];
+    this.memberRoles = {};
+    this.messages = [];
+    this.permissions = {};
+    this._channelSub = null;
+    this._msgSub = null;
+    this._channelsSub = null;
+    this._membersSub = null;
+    this._rolesSub = null;
+  }
+
+  /* ---------- Открыть/закрыть ---------- */
+  async open() {
+    $("community-screen").classList.remove("hidden");
+    document.body.style.overflow = "hidden";
+    await this.loadCommunities();
+    if (this.communities.length) {
+      await this.selectCommunity(this.communities[0].id);
+    } else {
+      this.showEmptyState();
+    }
+  }
+  close() {
+    $("community-screen").classList.add("hidden");
+    document.body.style.overflow = "";
+    this.unsubscribeAll();
+  }
+
+  /* ---------- Загрузка списка сообществ ---------- */
+  async loadCommunities() {
+    try {
+      const { data: mem } = await supabase
+        .from("community_members").select("community_id").eq("user_id", this.app.user.id);
+      const ids = (mem || []).map(m => m.community_id);
+      if (!ids.length) { this.communities = []; return; }
+      const { data } = await supabase
+        .from("communities")
+        .select("id, name, description, avatar_url, banner_url, owner_id, is_public, invite_token, created_at")
+        .in("id", ids).order("created_at", { ascending: true });
+      this.communities = data || [];
+    } catch (e) {
+      console.error("loadCommunities:", e);
+      this.communities = [];
+    }
+  }
+
+  /* ---------- Рендер rail ---------- */
+  renderRail() {
+    const rail = $("community-rail");
+    rail.innerHTML = "";
+    this.communities.forEach(c => {
+      const b = document.createElement("button");
+      b.className = "community-rail-btn" + (this.activeCommunity?.id === c.id ? " active" : "");
+      b.title = c.name;
+      if (c.avatar_url) {
+        const safe = safeUrl(c.avatar_url);
+        b.innerHTML = safe ? `<img src="${safe}" alt="">` : escapeHtml((c.name || "?").slice(0, 2).toUpperCase());
+      } else {
+        b.textContent = (c.name || "?").slice(0, 2).toUpperCase();
+      }
+      b.addEventListener("click", () => this.selectCommunity(c.id));
+      rail.appendChild(b);
+    });
+    const plus = document.createElement("button");
+    plus.className = "community-rail-btn plus";
+    plus.title = "Создать сообщество";
+    plus.textContent = "＋";
+    plus.addEventListener("click", () => this.openCreateDialog());
+    rail.appendChild(plus);
+  }
+
+  /* ---------- Показать пустое состояние ---------- */
+  showEmptyState() {
+    this.renderRail();
+    $("community-sidebar-name").textContent = "—";
+    $("community-sidebar-body").innerHTML = `<div class="empty-state">Нет сообществ. Создай первое через «＋» слева.</div>`;
+    $("community-empty").classList.remove("hidden");
+    $("community-channel-view").classList.add("hidden");
+    $("community-members-list").innerHTML = "";
+    $("community-me-name").textContent = this.app.profile.username;
+    $("community-me-status").textContent = STATUS_META[this.app.profile.status || "online"]?.label || "В сети";
+    paintAvatar($("community-me-avatar"), this.app.profile);
+  }
+
+  /* ---------- Выбор сообщества ---------- */
+  async selectCommunity(id) {
+    const c = this.communities.find(x => x.id === id);
+    if (!c) return;
+    this.activeCommunity = c;
+    this.activeChannel = null;
+    this.renderRail();
+    $("community-sidebar-name").textContent = c.name;
+
+    await Promise.all([
+      this.loadCategoriesAndChannels(),
+      this.loadMembers(),
+      this.loadRoles(),
+      this.loadMyPermissions(),
+    ]);
+    this.renderSidebar();
+    this.renderMembers();
+    this.renderEmptyOrFirstChannel();
+    this.subscribeCommunity();
+  }
+
+  /* ---------- Загрузка категорий и каналов ---------- */
+  async loadCategoriesAndChannels() {
+    const cid = this.activeCommunity.id;
+    const [{ data: cats }, { data: chans }] = await Promise.all([
+      supabase.from("community_categories").select("*").eq("community_id", cid).order("position", { ascending: true }),
+      supabase.from("community_channels").select("*").eq("community_id", cid).order("position", { ascending: true }),
+    ]);
+    this.categories = cats || [];
+    this.channels = chans || [];
+  }
+
+  /* ---------- Загрузка ролей ---------- */
+  async loadRoles() {
+    const { data } = await supabase
+      .from("community_roles").select("*")
+      .eq("community_id", this.activeCommunity.id)
+      .order("position", { ascending: false });
+    this.roles = data || [];
+  }
+
+  /* ---------- Загрузка участников ---------- */
+  async loadMembers() {
+    const { data } = await supabase
+      .from("community_members")
+      .select("user_id, joined_at, profile:profiles!community_members_user_id_fkey(id, username, nexora_id, avatar_url, is_online, show_online, is_bot, status, badge_emoji)")
+      .eq("community_id", this.activeCommunity.id);
+    this.members = (data || []).map(m => ({ user_id: m.user_id, joined_at: m.joined_at, profile: m.profile }));
+
+    const { data: mr } = await supabase
+      .from("community_member_roles")
+      .select("user_id, role_id")
+      .eq("community_id", this.activeCommunity.id);
+    const map = {};
+    (mr || []).forEach(r => {
+      if (!map[r.user_id]) map[r.user_id] = [];
+      map[r.user_id].push(r.role_id);
+    });
+    this.memberRoles = map;
+  }
+
+  /* ---------- Проверка моих прав ---------- */
+  async loadMyPermissions() {
+    const isOwner = this.activeCommunity.owner_id === this.app.user.id;
+    if (isOwner) {
+      this.permissions = Object.fromEntries(Object.keys(COMMUNITY_PERMS).map(k => [k, true]));
+      return;
+    }
+    const myRoleIds = this.memberRoles[this.app.user.id] || [];
+    const perms = {};
+    myRoleIds.forEach(rid => {
+      const role = this.roles.find(r => r.id === rid);
+      if (!role) return;
+      Object.entries(role.permissions || {}).forEach(([k, v]) => {
+        if (v === true) perms[k] = true;
+      });
+    });
+    this.permissions = perms;
+  }
+
+  hasPerm(p) {
+    if (!this.activeCommunity) return false;
+    if (this.activeCommunity.owner_id === this.app.user.id) return true;
+    return this.permissions[p] === true;
+  }
+
+  /* ---------- Рендер сайдбара (каналы) ---------- */
+  renderSidebar() {
+    const body = $("community-sidebar-body");
+    body.innerHTML = "";
+
+    const canManage = this.hasPerm("manage_channels");
+    const frag = document.createDocumentFragment();
+
+    // Каналы без категории
+    const orphans = this.channels.filter(c => !c.category_id);
+    orphans.forEach(ch => frag.appendChild(this.channelItem(ch)));
+
+    // Категории
+    this.categories.forEach(cat => {
+      const catEl = document.createElement("div");
+      catEl.className = "community-category";
+      catEl.innerHTML = `<span>${escapeHtml(cat.name)}</span>`;
+      if (canManage) {
+        const add = document.createElement("button");
+        add.className = "community-category-add";
+        add.textContent = "＋";
+        add.title = "Создать канал";
+        add.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this.openCreateChannelDialog(cat.id);
+        });
+        catEl.appendChild(add);
+      }
+      frag.appendChild(catEl);
+
+      const inCat = this.channels.filter(c => c.category_id === cat.id);
+      inCat.forEach(ch => frag.appendChild(this.channelItem(ch)));
+    });
+
+    // Кнопка создания категории / канала (если можно управлять)
+    if (canManage) {
+      const actions = document.createElement("div");
+      actions.style.padding = "10px 12px";
+      actions.style.display = "flex";
+      actions.style.gap = "6px";
+      const btnChannel = document.createElement("button");
+      btnChannel.className = "btn btn-ghost";
+      btnChannel.style.flex = "1";
+      btnChannel.style.padding = "6px 8px";
+      btnChannel.style.fontSize = "11px";
+      btnChannel.textContent = "＋ Канал";
+      btnChannel.addEventListener("click", () => this.openCreateChannelDialog(null));
+      const btnCat = document.createElement("button");
+      btnCat.className = "btn btn-ghost";
+      btnCat.style.flex = "1";
+      btnCat.style.padding = "6px 8px";
+      btnCat.style.fontSize = "11px";
+      btnCat.textContent = "＋ Категория";
+      btnCat.addEventListener("click", () => this.openCreateCategoryDialog());
+      actions.appendChild(btnChannel);
+      actions.appendChild(btnCat);
+      frag.appendChild(actions);
+    }
+
+    body.appendChild(frag);
+  }
+
+  channelItem(ch) {
+    const item = document.createElement("div");
+    item.className = "community-channel-item" + (ch.type === "voice" ? " voice" : "")
+      + (this.activeChannel?.id === ch.id ? " active" : "");
+    const icon = ch.type === "voice" ? ICONS.volume : ICONS.hash;
+    item.innerHTML = `<span class="ch-icon">${icon}</span><span class="ch-name">${escapeHtml(ch.name)}</span>`;
+    item.addEventListener("click", () => this.openChannel(ch));
+    item.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      this.openChannelContextMenu(e, ch);
+    });
+    return item;
+  }
+
+  renderEmptyOrFirstChannel() {
+    if (this.channels.length) {
+      const firstText = this.channels.find(c => c.type === "text");
+      if (firstText) this.openChannel(firstText);
+      else this.openChannel(this.channels[0]);
+    } else {
+      $("community-empty").classList.remove("hidden");
+      $("community-channel-view").classList.add("hidden");
+    }
+  }
+
+  /* ---------- Открытие канала ---------- */
+  async openChannel(ch) {
+    this.activeChannel = ch;
+    this.renderSidebar();
+
+    if (ch.type === "voice") {
+      $("community-empty").classList.remove("hidden");
+      $("community-channel-view").classList.add("hidden");
+      this.openVoiceStub(ch);
+      return;
+    }
+
+    $("community-empty").classList.add("hidden");
+    $("community-channel-view").classList.remove("hidden");
+    $("community-channel-title").textContent = ch.name;
+    $("community-channel-topic").textContent = ch.topic || "";
+
+    const canSend = this.hasPerm("send_messages");
+    const ta = $("community-composer");
+    const btnSend = $("btn-community-send");
+    ta.disabled = !canSend;
+    btnSend.disabled = !canSend;
+    ta.placeholder = canSend ? `Написать в #${ch.name}…` : "Писать могут только участники с правом send_messages";
+
+    await this.loadMessages();
+    this.renderMessages();
+    this.subscribeChannel(ch.id);
+  }
+
+  openVoiceStub(ch) {
+    this.app.openModal({
+      title: "🔊 " + ch.name,
+      narrow: true,
+      body: (body) => {
+        body.innerHTML = `<p style="color:var(--text-2);text-align:center;padding:20px 0">
+          Голосовые каналы появятся в следующем обновлении. WebRTC / сигналинг сейчас в разработке.
+        </p>`;
+      },
+    });
+  }
+
+  /* ---------- Сообщения канала ---------- */
+  async loadMessages() {
+    if (!this.activeChannel) return;
+    const { data } = await supabase
+      .from("community_messages")
+      .select("id, channel_id, community_id, sender_id, content, kind, attachment_url, attachment_type, file_name, file_size, reply_to, edited_at, created_at, deleted_at, deleted_by")
+      .eq("channel_id", this.activeChannel.id)
+      .order("created_at", { ascending: true })
+      .limit(300);
+    this.messages = data || [];
+  }
+
+  renderMessages() {
+    const box = $("community-messages");
+    box.innerHTML = "";
+    if (!this.messages.length) {
+      box.innerHTML = `<div class="empty-state">Пусто. Напиши первое сообщение!</div>`;
+      return;
+    }
+    let prev = null;
+    this.messages.forEach(m => {
+      const needDate = !prev || new Date(prev.created_at).toDateString() !== new Date(m.created_at).toDateString();
+      if (needDate) {
+        const sep = document.createElement("div");
+        sep.className = "date-sep";
+        sep.textContent = formatDateLabel(m.created_at);
+        box.appendChild(sep);
+      }
+      box.appendChild(this.renderOne(m));
+      prev = m;
+    });
+    requestAnimationFrame(() => { box.scrollTop = box.scrollHeight; });
+  }
+
+  renderOne(m) {
+    const isOwn = m.sender_id === this.app.user.id;
+    const member = this.members.find(x => x.user_id === m.sender_id);
+    const sender = member?.profile || null;
+    const senderName = isOwn ? "Ты" : (sender?.nickname || sender?.username || "User");
+
+    if (m.deleted_at) {
+      const row = document.createElement("div");
+      row.className = "msg-row" + (isOwn ? " own" : "");
+      row.dataset.messageId = m.id;
+      row.innerHTML = `<div class="msg-bubble"><div class="msg-deleted">Сообщение удалено</div></div>`;
+      return row;
+    }
+
+    const row = document.createElement("div");
+    row.className = "msg-row" + (isOwn ? " own" : "");
+    row.dataset.messageId = m.id;
+
+    const bubble = document.createElement("div");
+    bubble.className = "msg-bubble";
+
+    if (!isOwn) {
+      const h = document.createElement("div");
+      h.className = "msg-sender";
+      const badgeEmoji = sender?.badge_emoji ? ` ${escapeHtml(sender.badge_emoji)}` : "";
+      h.innerHTML = escapeHtml(senderName) + badgeEmoji;
+      h.style.cursor = "pointer";
+      h.addEventListener("click", () => { if (sender) this.app.openUserProfile(sender.id, sender); });
+      bubble.appendChild(h);
+    }
+
+    const content = document.createElement("div");
+    content.className = "msg-content";
+    this.renderContent(content, m);
+    bubble.appendChild(content);
+
+    const meta = document.createElement("div");
+    meta.className = "msg-meta";
+    meta.innerHTML = `${m.edited_at ? '<span class="msg-edited">(изменено)</span>' : ""}
+      <span>${escapeHtml(formatTime(m.created_at))}</span>`;
+    bubble.appendChild(meta);
+
+    row.appendChild(bubble);
+
+    row.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      this.openMessageContextMenu(e, m, isOwn);
+    });
+    return row;
+  }
+
+  renderContent(el, m) {
+    el.innerHTML = "";
+    const kind = m.kind || "text";
+    if (kind === "image" && m.attachment_url) {
+      const img = document.createElement("img");
+      img.className = "msg-image"; img.src = m.attachment_url; img.loading = "lazy";
+      img.addEventListener("click", () => this.app.openLightbox(m.attachment_url, "image"));
+      el.appendChild(img);
+      return;
+    }
+    if (kind === "video" && m.attachment_url) {
+      const vp = new VideoPlayerWidget(m.attachment_url, { fileName: m.file_name, fileSize: m.file_size });
+      el.appendChild(vp.render());
+      return;
+    }
+    if (kind === "file" && m.attachment_url) {
+      const a = document.createElement("a");
+      a.className = "msg-file"; a.href = m.attachment_url;
+      a.target = "_blank"; a.rel = "noopener noreferrer"; a.download = m.file_name || "";
+      a.innerHTML = `<div class="msg-file-icon">📄</div><div><div class="msg-file-name">${escapeHtml(m.file_name || "Файл")}</div><div class="msg-file-size">${escapeHtml(humanSize(m.file_size))}</div></div>`;
+      el.appendChild(a);
+      return;
+    }
+    el.innerHTML = renderMarkdown(m.content || "");
+  }
+
+  openMessageContextMenu(event, m, isOwn) {
+    this.app.closeContextMenu();
+    const menu = document.createElement("div");
+    menu.className = "ctx-menu"; menu.id = "ctx-menu";
+    const mk = (label, handler, danger = false) => {
+      const b = document.createElement("button");
+      b.textContent = label;
+      if (danger) b.classList.add("danger");
+      b.addEventListener("click", () => { this.app.closeContextMenu(); handler(); });
+      menu.appendChild(b);
+    };
+    mk("📋 Копировать", () => {
+      navigator.clipboard.writeText(m.content || m.attachment_url || "");
+      toast("Скопировано", "success");
+    });
+    if (isOwn) mk("🗑 Удалить", () => this.deleteMessageForMe(m), true);
+    if (isOwn || this.hasPerm("delete_messages")) {
+      mk("🗑 Удалить у всех", () => this.deleteMessageForEveryone(m), true);
+    }
+    document.body.appendChild(menu);
+    const r = event.target.getBoundingClientRect();
+    menu.style.left = Math.min(r.left, window.innerWidth - 220) + "px";
+    menu.style.top = Math.min(r.bottom, window.innerHeight - 220) + "px";
+    setTimeout(() => document.addEventListener("click", () => this.app.closeContextMenu(), { once: true }), 0);
+  }
+
+  async deleteMessageForMe(m) {
+    if (!confirm("Удалить только у себя?")) return;
+    this.messages = this.messages.filter(x => x.id !== m.id);
+    this.renderMessages();
+    toast("Удалено у тебя", "success");
+  }
+  async deleteMessageForEveryone(m) {
+    if (!confirm("Удалить у всех?")) return;
+    try {
+      const { error } = await supabase.rpc("delete_community_message_for_everyone", { p_message_id: m.id });
+      if (error) throw error;
+      const i = this.messages.findIndex(x => x.id === m.id);
+      if (i >= 0) {
+        this.messages[i].deleted_at = new Date().toISOString();
+        this.messages[i].deleted_by = this.app.user.id;
+        this.renderMessages();
+      }
+      toast("Удалено у всех", "success");
+    } catch (e) { toast(e.message || "Ошибка", "error"); }
+  }
+
+  /* ---------- Отправка ---------- */
+  async sendFromComposer() {
+    const ta = $("community-composer");
+    const text = ta.value.trim();
+    if (!text || !this.activeChannel || !this.activeCommunity) return;
+    if (!this.hasPerm("send_messages")) return toast("Нет прав на отправку", "warning");
+    ta.value = ""; ta.style.height = "auto";
+    try {
+      const { data, error } = await supabase.from("community_messages").insert({
+        channel_id: this.activeChannel.id,
+        community_id: this.activeCommunity.id,
+        sender_id: this.app.user.id,
+        content: text, kind: "text",
+      }).select().single();
+      if (error) throw error;
+      if (!this.messages.find(x => x.id === data.id)) {
+        this.messages.push(data);
+        this.renderMessages();
+      }
+      Sounds.send();
+    } catch (e) { toast(e.message || "Ошибка отправки", "error"); }
+  }
+
+  /* ---------- Меню канала (ПКМ) ---------- */
+  openChannelContextMenu(event, ch) {
+    this.app.closeContextMenu();
+    const menu = document.createElement("div");
+    menu.className = "ctx-menu"; menu.id = "ctx-menu";
+    const mk = (label, handler, danger = false) => {
+      const b = document.createElement("button");
+      b.textContent = label;
+      if (danger) b.classList.add("danger");
+      b.addEventListener("click", () => { this.app.closeContextMenu(); handler(); });
+      menu.appendChild(b);
+    };
+    if (this.hasPerm("manage_channels")) {
+      mk("✎ Переименовать", () => this.renameChannelDialog(ch));
+      mk("✎ Тема канала", () => this.editChannelTopicDialog(ch));
+      mk("🗑 Удалить канал", () => this.deleteChannel(ch), true);
+    } else {
+      menu.innerHTML = `<button disabled style="opacity:.5;cursor:default">Нет прав на управление</button>`;
+    }
+    document.body.appendChild(menu);
+    const r = event.target.getBoundingClientRect();
+    menu.style.left = Math.min(r.left, window.innerWidth - 220) + "px";
+    menu.style.top = Math.min(r.bottom, window.innerHeight - 220) + "px";
+    setTimeout(() => document.addEventListener("click", () => this.app.closeContextMenu(), { once: true }), 0);
+  }
+
+  async renameChannelDialog(ch) {
+    const name = prompt("Новое имя канала:", ch.name);
+    if (!name) return;
+    try {
+      const { error } = await supabase.from("community_channels").update({ name: name.trim() }).eq("id", ch.id);
+      if (error) throw error;
+      await this.loadCategoriesAndChannels();
+      this.renderSidebar();
+      toast("Переименовано", "success");
+    } catch (e) { toast(e.message || "Ошибка", "error"); }
+  }
+  async editChannelTopicDialog(ch) {
+    const topic = prompt("Тема канала:", ch.topic || "");
+    if (topic === null) return;
+    try {
+      const { error } = await supabase.from("community_channels").update({ topic: topic.trim() }).eq("id", ch.id);
+      if (error) throw error;
+      await this.loadCategoriesAndChannels();
+      if (this.activeChannel?.id === ch.id) {
+        $("community-channel-topic").textContent = topic.trim();
+        this.activeChannel.topic = topic.trim();
+      }
+      toast("Сохранено", "success");
+    } catch (e) { toast(e.message || "Ошибка", "error"); }
+  }
+  async deleteChannel(ch) {
+    if (!confirm(`Удалить канал #${ch.name}?`)) return;
+    try {
+      const { error } = await supabase.from("community_channels").delete().eq("id", ch.id);
+      if (error) throw error;
+      if (this.activeChannel?.id === ch.id) {
+        this.activeChannel = null;
+        $("community-channel-view").classList.add("hidden");
+        $("community-empty").classList.remove("hidden");
+      }
+      await this.loadCategoriesAndChannels();
+      this.renderSidebar();
+      toast("Канал удалён", "warning");
+    } catch (e) { toast(e.message || "Ошибка", "error"); }
+  }
+
+  /* ---------- Создание канала / категории ---------- */
+  openCreateChannelDialog(categoryId) {
+    this.app.openModal({
+      title: "Создать канал",
+      narrow: true,
+      body: (body) => {
+        body.innerHTML = `
+          <div class="form-group">
+            <label>Тип</label>
+            <div style="display:flex;gap:8px" id="cc-type">
+              <button class="btn btn-primary" data-type="text"># Текстовый</button>
+              <button class="btn btn-ghost" data-type="voice">🔊 Голосовой</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label>Имя канала</label>
+            <input id="cc-name" maxlength="40" placeholder="general">
+          </div>
+          <div class="form-group">
+            <label>Тема (необязательно)</label>
+            <input id="cc-topic" maxlength="120" placeholder="О чём канал">
+          </div>
+          <div id="cc-error" class="form-error"></div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)">
+            <button class="btn btn-ghost" id="cc-cancel">Отмена</button>
+            <button class="btn btn-primary" id="cc-create">Создать</button>
+          </div>`;
+        let type = "text";
+        const typeBox = body.querySelector("#cc-type");
+        typeBox.querySelectorAll("button").forEach(b => {
+          b.addEventListener("click", () => {
+            type = b.dataset.type;
+            typeBox.querySelectorAll("button").forEach(x => x.className = "btn btn-ghost");
+            b.className = "btn btn-primary";
+          });
+        });
+        body.querySelector("#cc-cancel").addEventListener("click", () => this.app.closeModal());
+        body.querySelector("#cc-create").addEventListener("click", async () => {
+          const errEl = body.querySelector("#cc-error");
+          errEl.classList.remove("show");
+          const name = body.querySelector("#cc-name").value.trim().toLowerCase().replace(/\s+/g, "-");
+          const topic = body.querySelector("#cc-topic").value.trim();
+          if (!name) { errEl.textContent = "Введи имя"; errEl.classList.add("show"); return; }
+          try {
+            const maxPos = this.channels.filter(c => c.category_id === (categoryId || null)).reduce((a, c) => Math.max(a, c.position || 0), 0);
+            const { error } = await supabase.from("community_channels").insert({
+              community_id: this.activeCommunity.id,
+              category_id: categoryId || null,
+              name, type, topic, position: maxPos + 1,
+            });
+            if (error) throw error;
+            this.app.closeModal();
+            await this.loadCategoriesAndChannels();
+            this.renderSidebar();
+            toast("Канал создан", "success");
+          } catch (e) { errEl.textContent = e.message || "Ошибка"; errEl.classList.add("show"); }
+        });
+      },
+    });
+  }
+  openCreateCategoryDialog() {
+    this.app.openModal({
+      title: "Создать категорию",
+      narrow: true,
+      body: (body) => {
+        body.innerHTML = `
+          <div class="form-group">
+            <label>Название</label>
+            <input id="cat-name" maxlength="40" placeholder="INFORMATION">
+          </div>
+          <div id="cat-error" class="form-error"></div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)">
+            <button class="btn btn-ghost" id="cat-cancel">Отмена</button>
+            <button class="btn btn-primary" id="cat-create">Создать</button>
+          </div>`;
+        body.querySelector("#cat-cancel").addEventListener("click", () => this.app.closeModal());
+        body.querySelector("#cat-create").addEventListener("click", async () => {
+          const errEl = body.querySelector("#cat-error");
+          errEl.classList.remove("show");
+          const name = body.querySelector("#cat-name").value.trim();
+          if (!name) { errEl.textContent = "Введи имя"; errEl.classList.add("show"); return; }
+          try {
+            const maxPos = this.categories.reduce((a, c) => Math.max(a, c.position || 0), 0);
+            const { error } = await supabase.from("community_categories").insert({
+              community_id: this.activeCommunity.id,
+              name, position: maxPos + 1,
+            });
+            if (error) throw error;
+            this.app.closeModal();
+            await this.loadCategoriesAndChannels();
+            this.renderSidebar();
+            toast("Категория создана", "success");
+          } catch (e) { errEl.textContent = e.message || "Ошибка"; errEl.classList.add("show"); }
+        });
+      },
+    });
+  }
+
+  /* ---------- Участники ---------- */
+  renderMembers() {
+    const list = $("community-members-list");
+    list.innerHTML = "";
+    // Owner сверху
+    const owner = this.members.find(m => m.user_id === this.activeCommunity.owner_id);
+    const others = this.members.filter(m => m.user_id !== this.activeCommunity.owner_id);
+
+    const renderRow = (m, isOwner) => {
+      const p = m.profile;
+      if (!p) return;
+      const roleIds = this.memberRoles[m.user_id] || [];
+      const roleNames = roleIds.map(rid => this.roles.find(r => r.id === rid)?.name).filter(Boolean);
+      const row = document.createElement("div");
+      row.className = "community-member-row";
+      row.innerHTML = `
+        ${avatarHTML(p, "sm")}
+        <div class="cm-body">
+          <div class="cm-name">${escapeHtml(p.username)}${p.badge_emoji ? ` <span>${escapeHtml(p.badge_emoji)}</span>` : ""}${isOwner ? ' <span class="badge success" style="font-size:9px">OWNER</span>' : ""}</div>
+          ${roleNames.length ? `<div class="cm-roles">${roleNames.map(r => `<span class="community-role-dot" style="background:#9aa0ff"></span>${escapeHtml(r)}`).join(" · ")}</div>` : ""}
+        </div>`;
+      row.addEventListener("click", () => this.openMemberMenu(m));
+      list.appendChild(row);
+    };
+    if (owner) renderRow(owner, true);
+    others.forEach(m => renderRow(m, false));
+  }
+
+  openMemberMenu(m) {
+    const p = m.profile;
+    if (!p) return;
+    const isSelf = p.id === this.app.user.id;
+    this.app.openModal({
+      title: p.username,
+      narrow: true,
+      body: (body) => {
+        body.innerHTML = `
+          <div class="profile-hero">
+            ${avatarHTML(p, "lg")}
+            <div class="profile-hero-name">${escapeHtml(p.nickname || p.username)}</div>
+            <div class="profile-id-badge">${escapeHtml(p.nexora_id)}</div>
+          </div>
+          <div id="mm-actions" style="display:flex;flex-direction:column;gap:8px;margin-top:16px"></div>`;
+        const actions = body.querySelector("#mm-actions");
+        const addBtn = (label, handler, danger = false) => {
+          const b = document.createElement("button");
+          b.className = "btn " + (danger ? "btn-danger" : "btn-ghost") + " btn-block";
+          b.textContent = label;
+          b.addEventListener("click", handler);
+          actions.appendChild(b);
+        };
+        if (!isSelf) {
+          addBtn("💬 Написать", () => { this.app.closeModal(); this.app.openDirectChat(p); });
+        }
+        if (this.hasPerm("manage_roles") || this.activeCommunity.owner_id === this.app.user.id) {
+          addBtn("🎭 Назначить роли", () => { this.app.closeModal(); this.openAssignRolesDialog(m); });
+        }
+        if (!isSelf && this.hasPerm("manage_members")) {
+          addBtn("🚪 Кикнуть", () => this.kickMember(m), true);
+        }
+      },
+    });
+  }
+
+  async kickMember(m) {
+    if (!confirm(`Кикнуть ${m.profile.username}?`)) return;
+    try {
+      const { error } = await supabase.from("community_members")
+        .delete().eq("community_id", this.activeCommunity.id).eq("user_id", m.user_id);
+      if (error) throw error;
+      this.app.closeModal();
+      await this.loadMembers();
+      this.renderMembers();
+      toast("Кикнут", "warning");
+    } catch (e) { toast(e.message || "Ошибка", "error"); }
+  }
+
+  openAssignRolesDialog(m) {
+    this.app.openModal({
+      title: "Роли участника",
+      narrow: true,
+      body: (body) => {
+        body.innerHTML = `
+          <p style="color:var(--text-2);font-size:13px;margin-bottom:12px">
+            ${escapeHtml(m.profile.username)}
+          </p>
+          <div id="ar-list"></div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)">
+            <button class="btn btn-ghost" id="ar-close">Закрыть</button>
+          </div>`;
+        const list = body.querySelector("#ar-list");
+        const myRoles = new Set(this.memberRoles[m.user_id] || []);
+        this.roles.forEach(r => {
+          const row = document.createElement("div");
+          row.className = "settings-row";
+          row.innerHTML = `
+            <div class="settings-row-info">
+              <div class="settings-row-label">
+                <span class="community-role-dot" style="background:${r.color || "#9aa0ff"}"></span>
+                ${escapeHtml(r.name)} ${r.is_everyone ? '<span class="badge muted" style="font-size:9px">default</span>' : ""}
+              </div>
+            </div>`;
+          const sw = document.createElement("div");
+          sw.className = "switch" + (myRoles.has(r.id) ? " on" : "");
+          if (r.is_everyone) {
+            sw.style.opacity = "0.4";
+            sw.style.pointerEvents = "none";
+          } else {
+            sw.addEventListener("click", async () => {
+              const next = !sw.classList.contains("on");
+              sw.classList.toggle("on", next);
+              try {
+                if (next) {
+                  await supabase.from("community_member_roles").insert({
+                    community_id: this.activeCommunity.id, user_id: m.user_id, role_id: r.id,
+                  });
+                } else {
+                  await supabase.from("community_member_roles").delete()
+                    .eq("community_id", this.activeCommunity.id).eq("user_id", m.user_id).eq("role_id", r.id);
+                }
+                await this.loadMembers();
+                this.renderMembers();
+              } catch (e) {
+                sw.classList.toggle("on", !next);
+                toast(e.message || "Ошибка", "error");
+              }
+            });
+          }
+          row.appendChild(sw);
+          list.appendChild(row);
+        });
+        body.querySelector("#ar-close").addEventListener("click", () => this.app.closeModal());
+      },
+    });
+  }
+
+  /* ---------- Роли ---------- */
+  openRolesManager() {
+    this.app.openModal({
+      title: "Роли",
+      wide: true,
+      body: (body) => {
+        body.innerHTML = `
+          <button class="btn btn-primary btn-block" id="roles-new" style="margin-bottom:14px">＋ Создать роль</button>
+          <div id="roles-list"></div>`;
+        const list = body.querySelector("#roles-list");
+        const renderList = () => {
+          list.innerHTML = "";
+          this.roles.forEach(r => {
+            const row = document.createElement("div");
+            row.className = "settings-row";
+            row.innerHTML = `
+              <div class="settings-row-info">
+                <div class="settings-row-label">
+                  <span class="community-role-dot" style="background:${r.color || "#9aa0ff"}"></span>
+                  ${escapeHtml(r.name)}
+                  ${r.is_everyone ? '<span class="badge muted" style="font-size:9px">default</span>' : ""}
+                </div>
+                <div class="settings-row-desc">${Object.entries(r.permissions || {}).filter(([,v])=>v===true).length} прав</div>
+              </div>`;
+            const b = document.createElement("button");
+            b.className = "btn btn-ghost";
+            b.textContent = "Открыть";
+            b.addEventListener("click", () => { this.app.closeModal(); this.openRoleEditor(r); });
+            row.appendChild(b);
+            list.appendChild(row);
+          });
+        };
+        renderList();
+        body.querySelector("#roles-new").addEventListener("click", () => { this.app.closeModal(); this.openRoleEditor(null); });
+      },
+    });
+  }
+
+  openRoleEditor(role) {
+    const isNew = !role;
+    const draft = role ? JSON.parse(JSON.stringify(role)) : {
+      name: "Новая роль",
+      color: "#9aa0ff",
+      position: 1,
+      is_everyone: false,
+      permissions: {},
+    };
+    this.app.openModal({
+      title: isNew ? "Новая роль" : `Роль: ${role.name}`,
+      wide: true,
+      body: (body) => {
+        body.innerHTML = `
+          <div class="form-group">
+            <label>Название</label>
+            <input id="re-name" maxlength="40" value="${escapeHtml(draft.name)}">
+          </div>
+          <div class="form-group">
+            <label>Цвет</label>
+            <input id="re-color" type="color" value="${escapeHtml(draft.color)}" style="height:40px;padding:4px">
+          </div>
+          <div class="settings-section" style="margin-top:6px">
+            <h3>Права</h3>
+            <div id="re-perms"></div>
+          </div>
+          <div id="re-error" class="form-error"></div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)">
+            ${isNew ? "" : '<button class="btn btn-danger" id="re-delete">Удалить</button>'}
+            <button class="btn btn-ghost" id="re-cancel">Отмена</button>
+            <button class="btn btn-primary" id="re-save">Сохранить</button>
+          </div>`;
+        const permsBox = body.querySelector("#re-perms");
+        Object.entries(COMMUNITY_PERMS).forEach(([key, meta]) => {
+          const row = document.createElement("div");
+          row.className = "perm-row";
+          row.innerHTML = `<div class="perm-row-label">${escapeHtml(meta.label)}<div class="perm-row-desc">${escapeHtml(meta.desc)}</div></div>`;
+          const sw = document.createElement("div");
+          sw.className = "switch" + (draft.permissions?.[key] === true ? " on" : "");
+          sw.addEventListener("click", () => {
+            const next = !sw.classList.contains("on");
+            sw.classList.toggle("on", next);
+            if (!draft.permissions) draft.permissions = {};
+            draft.permissions[key] = next;
+          });
+          row.appendChild(sw);
+          permsBox.appendChild(row);
+        });
+
+        body.querySelector("#re-cancel").addEventListener("click", () => this.app.closeModal());
+        if (!isNew) {
+          body.querySelector("#re-delete").addEventListener("click", async () => {
+            if (draft.is_everyone) return toast("Нельзя удалить @everyone", "warning");
+            if (!confirm(`Удалить роль ${draft.name}?`)) return;
+            try {
+              const { error } = await supabase.from("community_roles").delete().eq("id", draft.id);
+              if (error) throw error;
+              this.app.closeModal();
+              await this.loadRoles();
+              await this.loadMembers();
+              this.renderMembers();
+              toast("Роль удалена", "warning");
+            } catch (e) { toast(e.message || "Ошибка", "error"); }
+          });
+        }
+        body.querySelector("#re-save").addEventListener("click", async () => {
+          const errEl = body.querySelector("#re-error");
+          errEl.classList.remove("show");
+          const name = body.querySelector("#re-name").value.trim();
+          const color = body.querySelector("#re-color").value;
+          if (!name) { errEl.textContent = "Введи имя"; errEl.classList.add("show"); return; }
+          try {
+            if (isNew) {
+              const maxPos = this.roles.reduce((a, r) => Math.max(a, r.position || 0), 0);
+              await supabase.from("community_roles").insert({
+                community_id: this.activeCommunity.id,
+                name, color, position: maxPos + 1,
+                is_everyone: false,
+                permissions: draft.permissions || {},
+              });
+            } else {
+              await supabase.from("community_roles").update({
+                name, color, permissions: draft.permissions || {},
+              }).eq("id", draft.id);
+            }
+            this.app.closeModal();
+            await this.loadRoles();
+            await this.loadMembers();
+            this.renderMembers();
+            toast("Сохранено", "success");
+          } catch (e) { errEl.textContent = e.message || "Ошибка"; errEl.classList.add("show"); }
+        });
+      },
+    });
+  }
+
+  /* ---------- Создание сообщества ---------- */
+  openCreateDialog() {
+    this.app.openModal({
+      title: "Создать сообщество",
+      narrow: true,
+      body: (body) => {
+        body.innerHTML = `
+          <div class="form-group">
+            <label>Название</label>
+            <input id="ncom-name" maxlength="60" placeholder="Моё сообщество">
+          </div>
+          <div class="form-group">
+            <label>Описание</label>
+            <textarea id="ncom-desc" rows="2" maxlength="200"></textarea>
+          </div>
+          <label style="display:flex;gap:10px;align-items:center;cursor:pointer;padding:6px 0">
+            <input type="checkbox" id="ncom-pub" style="width:auto">
+            <span>Публичное сообщество</span>
+          </label>
+          <div id="ncom-error" class="form-error"></div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)">
+            <button class="btn btn-ghost" id="ncom-cancel">Отмена</button>
+            <button class="btn btn-primary" id="ncom-create">Создать</button>
+          </div>`;
+        body.querySelector("#ncom-cancel").addEventListener("click", () => this.app.closeModal());
+        body.querySelector("#ncom-create").addEventListener("click", async () => {
+          const errEl = body.querySelector("#ncom-error");
+          errEl.classList.remove("show");
+          const name = body.querySelector("#ncom-name").value.trim();
+          const desc = body.querySelector("#ncom-desc").value.trim();
+          const isPub = body.querySelector("#ncom-pub").checked;
+          if (!name) { errEl.textContent = "Введи название"; errEl.classList.add("show"); return; }
+          try {
+            const { data, error } = await supabase.rpc("create_community", {
+              p_name: name, p_description: desc, p_is_public: isPub,
+            });
+            if (error) throw error;
+            this.app.closeModal();
+            await this.loadCommunities();
+            await this.selectCommunity(data);
+            Sounds.success();
+            toast("Сообщество создано", "success");
+          } catch (e) { errEl.textContent = e.message || "Ошибка"; errEl.classList.add("show"); }
+        });
+      },
+    });
+  }
+
+  /* ---------- Приглашения ---------- */
+  async openInviteDialog() {
+    if (!this.activeCommunity) return;
+    try {
+      const { data, error } = await supabase.rpc("create_community_invite", {
+        p_community_id: this.activeCommunity.id,
+        p_expires_in_hours: 24,
+        p_max_uses: null,
+      });
+      if (error) throw error;
+      const token = data;
+      const url = `${location.origin}${location.pathname}?community=${token}`;
+      this.app.openModal({
+        title: "Приглашение",
+        narrow: true,
+        body: (body) => {
+          body.innerHTML = `
+            <p style="color:var(--text-2);font-size:13px;margin-bottom:10px">
+              Ссылка действует 24 часа.
+            </p>
+            <div class="share-row">
+              <span class="share-link" id="inv-link">${escapeHtml(url)}</span>
+            </div>`;
+          body.querySelector("#inv-link").addEventListener("click", () => {
+            navigator.clipboard.writeText(url);
+            toast("Скопировано", "success");
+          });
+          const f = this.app._openModal.footerEl;
+          f.innerHTML = "";
+          const copy = document.createElement("button");
+          copy.className = "btn btn-primary";
+          copy.textContent = "Копировать ссылку";
+          copy.addEventListener("click", () => {
+            navigator.clipboard.writeText(url);
+            toast("Скопировано", "success");
+          });
+          f.appendChild(copy);
+        },
+      });
+    } catch (e) { toast(e.message || "Ошибка", "error"); }
+  }
+
+  async openJoinByLinkDialog() {
+    const raw = prompt("Вставь ссылку или токен:");
+    if (!raw) return;
+    let token = raw.trim();
+    try {
+      const u = new URL(raw);
+      const p = u.searchParams.get("community");
+      if (p) token = p;
+    } catch (_) {}
+    try {
+      const { data: ch } = await supabase.from("community_invites").select("community_id").eq("token", token).maybeSingle();
+      if (!ch) return toast("Неверная ссылка", "error");
+      const { error } = await supabase.rpc("join_community", {
+        p_community_id: ch.community_id, p_invite_token: token,
+      });
+      if (error) throw error;
+      await this.loadCommunities();
+      await this.selectCommunity(ch.community_id);
+      toast("Присоединились", "success");
+      Sounds.success();
+    } catch (e) { toast(e.message || "Ошибка", "error"); }
+  }
+
+  async handleCommunityDeepLink() {
+    const params = new URLSearchParams(location.search);
+    const token = params.get("community");
+    if (!token) return false;
+    try {
+      const { data: ch } = await supabase.from("community_invites").select("community_id").eq("token", token).maybeSingle();
+      if (!ch) { toast("Приглашение не найдено", "warning"); return false; }
+      const { error } = await supabase.rpc("join_community", {
+        p_community_id: ch.community_id, p_invite_token: token,
+      });
+      if (error) throw error;
+      this.open();
+      setTimeout(() => this.selectCommunity(ch.community_id), 300);
+      return true;
+    } catch (e) { toast(e.message || "Ошибка", "warning"); return false; }
+  }
+
+  /* ---------- Меню сообщества ---------- */
+  openCommunityMenu() {
+    if (!this.activeCommunity) return;
+    this.app.openModal({
+      title: this.activeCommunity.name,
+      narrow: true,
+      body: (body) => {
+        body.innerHTML = `<div id="cm-actions" style="display:flex;flex-direction:column;gap:8px"></div>`;
+        const actions = body.querySelector("#cm-actions");
+        const addBtn = (label, handler, danger = false) => {
+          const b = document.createElement("button");
+          b.className = "btn " + (danger ? "btn-danger" : "btn-ghost") + " btn-block";
+          b.textContent = label;
+          b.addEventListener("click", handler);
+          actions.appendChild(b);
+        };
+        if (this.hasPerm("create_invites")) addBtn("🔗 Пригласить", () => { this.app.closeModal(); this.openInviteDialog(); });
+        if (this.hasPerm("manage_roles")) addBtn("🎭 Роли", () => { this.app.closeModal(); this.openRolesManager(); });
+        if (this.hasPerm("manage_channels")) {
+          addBtn("＋ Канал", () => { this.app.closeModal(); this.openCreateChannelDialog(null); });
+          addBtn("＋ Категория", () => { this.app.closeModal(); this.openCreateCategoryDialog(); });
+        }
+        if (this.activeCommunity.owner_id === this.app.user.id) {
+          addBtn("🗑 Удалить сообщество", () => this.deleteCommunity(), true);
+        } else {
+          addBtn("🚪 Покинуть сообщество", () => this.leaveCommunity(), true);
+        }
+      },
+    });
+  }
+
+  async leaveCommunity() {
+    if (!confirm("Покинуть сообщество?")) return;
+    try {
+      const { error } = await supabase.from("community_members")
+        .delete().eq("community_id", this.activeCommunity.id).eq("user_id", this.app.user.id);
+      if (error) throw error;
+      this.app.closeModal();
+      this.activeCommunity = null;
+      await this.loadCommunities();
+      if (this.communities.length) await this.selectCommunity(this.communities[0].id);
+      else this.showEmptyState();
+      toast("Покинули", "warning");
+    } catch (e) { toast(e.message || "Ошибка", "error"); }
+  }
+  async deleteCommunity() {
+    if (!confirm(`Удалить сообщество «${this.activeCommunity.name}»? Все каналы и сообщения будут потеряны.`)) return;
+    try {
+      const { error } = await supabase.from("communities").delete().eq("id", this.activeCommunity.id);
+      if (error) throw error;
+      this.app.closeModal();
+      this.activeCommunity = null;
+      await this.loadCommunities();
+      if (this.communities.length) await this.selectCommunity(this.communities[0].id);
+      else this.showEmptyState();
+      toast("Сообщество удалено", "warning");
+    } catch (e) { toast(e.message || "Ошибка", "error"); }
+  }
+
+  /* ---------- Realtime ---------- */
+  unsubscribeAll() {
+    if (this._channelsSub) { supabase.removeChannel(this._channelsSub); this._channelsSub = null; }
+    if (this._membersSub) { supabase.removeChannel(this._membersSub); this._membersSub = null; }
+    if (this._rolesSub) { supabase.removeChannel(this._rolesSub); this._rolesSub = null; }
+    if (this._channelSub) { supabase.removeChannel(this._channelSub); this._channelSub = null; }
+    if (this._msgSub) { supabase.removeChannel(this._msgSub); this._msgSub = null; }
+  }
+
+  subscribeCommunity() {
+    if (this._channelsSub) supabase.removeChannel(this._channelsSub);
+    const cid = this.activeCommunity.id;
+    this._channelsSub = supabase.channel("community-channels:" + cid)
+      .on("postgres_changes", { event: "*", schema: "public", table: "community_channels", filter: `community_id=eq.${cid}` },
+        async () => {
+          await this.loadCategoriesAndChannels();
+          this.renderSidebar();
+        })
+      .subscribe();
+
+    if (this._membersSub) supabase.removeChannel(this._membersSub);
+    this._membersSub = supabase.channel("community-members:" + cid)
+      .on("postgres_changes", { event: "*", schema: "public", table: "community_members", filter: `community_id=eq.${cid}` },
+        async () => {
+          await this.loadMembers();
+          this.renderMembers();
+        })
+      .subscribe();
+
+    if (this._rolesSub) supabase.removeChannel(this._rolesSub);
+    this._rolesSub = supabase.channel("community-roles:" + cid)
+      .on("postgres_changes", { event: "*", schema: "public", table: "community_roles", filter: `community_id=eq.${cid}` },
+        async () => {
+          await this.loadRoles();
+          await this.loadMembers();
+          await this.loadMyPermissions();
+          this.renderMembers();
+        })
+      .subscribe();
+  }
+
+  subscribeChannel(channelId) {
+    if (this._channelSub) supabase.removeChannel(this._channelSub);
+    this._channelSub = supabase.channel("community-msg:" + channelId)
+      .on("postgres_changes", { event: "*", schema: "public", table: "community_messages", filter: `channel_id=eq.${channelId}` },
+        (p) => {
+          if (p.eventType === "INSERT") {
+            const m = p.new;
+            if (!m) return;
+            if (this.messages.find(x => x.id === m.id)) return;
+            this.messages.push(m);
+            this.renderMessages();
+            if (m.sender_id !== this.app.user.id) Sounds.message();
+          } else if (p.eventType === "UPDATE") {
+            const i = this.messages.findIndex(x => x.id === p.new.id);
+            if (i >= 0) { this.messages[i] = p.new; this.renderMessages(); }
+          } else if (p.eventType === "DELETE") {
+            this.messages = this.messages.filter(x => x.id !== p.old.id);
+            this.renderMessages();
+          }
+        })
+      .subscribe();
+  }
+}
 
 /* ============================================================
    КЛАСС NEXORA
@@ -395,6 +1778,9 @@ class NEXORA {
     this._chunks = [];
     this._voiceTimer = null;
     this._activePicker = null;
+    this._voiceAC = null;
+    this._voiceAnalyser = null;
+    this._voiceRAF = null;
 
     this._chatsReloadTimer = null;
     this._membersReloadTimer = null;
@@ -405,8 +1791,9 @@ class NEXORA {
     this._chReactionsChannel = null;
     this._chEmojisChannel = null;
 
-    /* Локально скрытые сообщения */
     this.hiddenMsgs = new Set(lsGet(HIDDEN_MSGS_KEY, []));
+
+    this.community = new CommunityManager(this);
 
     this.bindGlobalEvents();
   }
@@ -431,9 +1818,6 @@ class NEXORA {
     return this.hiddenMsgs.has(msgId);
   }
 
-  /* ============================================================
-     MODALS
-     ============================================================ */
   openModal({ title, body, footer, narrow = false, wide = false }) {
     this.closeModal();
     const backdrop = document.createElement("div");
@@ -479,9 +1863,7 @@ class NEXORA {
     }
   }
 
-  /* ============================================================
-     ACCOUNTS
-     ============================================================ */
+  /* ACCOUNTS */
   loadAccounts() {
     try { return JSON.parse(localStorage.getItem(ACCOUNTS_KEY) || "[]"); }
     catch { return []; }
@@ -492,9 +1874,7 @@ class NEXORA {
     list.unshift({ id, username, nexora_id, avatar_url, added_at: Date.now() });
     this.saveAccounts(list.slice(0, 8));
   }
-  forgetAccount(id) {
-    this.saveAccounts(this.loadAccounts().filter(a => a.id !== id));
-  }
+  forgetAccount(id) { this.saveAccounts(this.loadAccounts().filter(a => a.id !== id)); }
   openAccountsSwitcher() {
     const accounts = this.loadAccounts();
     this.openModal({
@@ -502,9 +1882,7 @@ class NEXORA {
       narrow: true,
       body: (body) => {
         body.innerHTML = "";
-        if (!accounts.length) {
-          body.innerHTML = `<p class="muted">Нет сохранённых аккаунтов</p>`;
-        }
+        if (!accounts.length) body.innerHTML = `<p class="muted">Нет сохранённых аккаунтов</p>`;
         accounts.forEach(a => {
           const row = document.createElement("div");
           row.className = "account-row" + (a.id === this.user?.id ? " current" : "");
@@ -516,19 +1894,10 @@ class NEXORA {
             </div>
             ${a.id === this.user?.id ? '<span class="account-badge">Активен</span>' : ""}`;
           if (a.id !== this.user?.id) {
-            row.addEventListener("click", async () => {
-              this.closeModal();
-              await this.switchAccount(a.id);
-            });
+            row.addEventListener("click", async () => { this.closeModal(); await this.switchAccount(a.id); });
             const rm = document.createElement("button");
-            rm.className = "btn btn-ghost";
-            rm.style.marginLeft = "6px";
-            rm.textContent = "✕";
-            rm.addEventListener("click", (e) => {
-              e.stopPropagation();
-              this.forgetAccount(a.id);
-              this.openAccountsSwitcher();
-            });
+            rm.className = "btn btn-ghost"; rm.style.marginLeft = "6px"; rm.textContent = "✕";
+            rm.addEventListener("click", (e) => { e.stopPropagation(); this.forgetAccount(a.id); this.openAccountsSwitcher(); });
             row.appendChild(rm);
           }
           body.appendChild(row);
@@ -538,12 +1907,7 @@ class NEXORA {
         add.style.marginTop = "14px";
         add.textContent = "＋ Войти в другой аккаунт";
         add.addEventListener("click", async () => {
-          if (this.user && this.profile) {
-            this.rememberAccount({
-              id: this.user.id, username: this.profile.username,
-              nexora_id: this.profile.nexora_id, avatar_url: this.profile.avatar_url,
-            });
-          }
+          if (this.user && this.profile) this.rememberAccount({ id: this.user.id, username: this.profile.username, nexora_id: this.profile.nexora_id, avatar_url: this.profile.avatar_url });
           this.closeModal();
           await this.logout(true);
         });
@@ -553,12 +1917,7 @@ class NEXORA {
   }
   async switchAccount(accountId) {
     if (!confirm("Переключиться на этот аккаунт?")) return;
-    if (this.user && this.profile) {
-      this.rememberAccount({
-        id: this.user.id, username: this.profile.username,
-        nexora_id: this.profile.nexora_id, avatar_url: this.profile.avatar_url,
-      });
-    }
+    if (this.user && this.profile) this.rememberAccount({ id: this.user.id, username: this.profile.username, nexora_id: this.profile.nexora_id, avatar_url: this.profile.avatar_url });
     try { await this.setOnline(false); } catch (_) {}
     await supabase.auth.signOut();
     this.stopRealtime();
@@ -578,9 +1937,7 @@ class NEXORA {
     }
   }
 
-  /* ============================================================
-     BOOT
-     ============================================================ */
+  /* BOOT */
   async boot() {
     applyProfileTheme(getProfileTheme());
     this.registerServiceWorker();
@@ -590,15 +1947,8 @@ class NEXORA {
         this.user = session.user;
         await this.loadProfile();
         if (this.profile) {
-          this.rememberAccount({
-            id: this.user.id, username: this.profile.username,
-            nexora_id: this.profile.nexora_id, avatar_url: this.profile.avatar_url,
-          });
-          try {
-            await supabase.rpc("log_login_event", {
-              user_agent: navigator.userAgent || "", ip: null,
-            });
-          } catch (_) {}
+          this.rememberAccount({ id: this.user.id, username: this.profile.username, nexora_id: this.profile.nexora_id, avatar_url: this.profile.avatar_url });
+          try { await supabase.rpc("log_login_event", { user_agent: navigator.userAgent || "", ip: null }); } catch (_) {}
           return this.enterApp();
         }
       }
@@ -608,8 +1958,7 @@ class NEXORA {
   }
   async registerServiceWorker() {
     if (!("serviceWorker" in navigator)) return;
-    try { this._swRegistration = await navigator.serviceWorker.register("./sw.js"); }
-    catch (e) { console.warn("SW:", e); }
+    try { this._swRegistration = await navigator.serviceWorker.register("./sw.js"); } catch (e) { console.warn("SW:", e); }
   }
   async requestNotificationPermission() {
     if (!("Notification" in window)) return false;
@@ -621,7 +1970,6 @@ class NEXORA {
   async notify(title, body, tag = "nexora") {
     if (!("Notification" in window)) return;
     if (Notification.permission !== "granted") return;
-    /* Уважаем настройку + статус DND */
     if (this.profile?.notifications_enabled === false) return;
     if (this.profile?.status === "dnd") return;
     const opts = { body, icon: "assets/icon-192.png", badge: "assets/icon-192.png", tag };
@@ -629,30 +1977,21 @@ class NEXORA {
       if (navigator.serviceWorker?.controller) {
         const reg = await navigator.serviceWorker.ready;
         reg.showNotification(title, opts);
-      } else {
-        new Notification(title, opts);
-      }
+      } else new Notification(title, opts);
     } catch (e) { console.warn("notify:", e); }
   }
 
-  /* ============================================================
-     AUTH
-     ============================================================ */
+  /* AUTH */
   showAuthCard(which) {
-    ["login", "register", "mfa"].forEach(k => {
-      $("auth-" + k).classList.toggle("hidden", k !== which);
-    });
+    ["login", "register", "mfa"].forEach(k => { $("auth-" + k).classList.toggle("hidden", k !== which); });
     this.clearAuthErrors();
   }
   clearAuthErrors() {
-    ["login-error", "reg-error", "mfa-error"].forEach(id => {
-      const el = $(id); if (el) { el.textContent = ""; el.classList.remove("show"); }
-    });
+    ["login-error", "reg-error", "mfa-error"].forEach(id => { const el = $(id); if (el) { el.textContent = ""; el.classList.remove("show"); } });
   }
   showError(id, msg) {
     const el = $(id); if (!el) return;
-    el.textContent = msg; el.classList.add("show");
-    Sounds.error();
+    el.textContent = msg; el.classList.add("show"); Sounds.error();
   }
   validateUsername(u) {
     if (!u) return "Введи nickname";
@@ -678,29 +2017,20 @@ class NEXORA {
       });
       if (error) throw error;
       if (data.user?.identities?.length === 0) throw new Error("Такой nickname уже занят");
-      toast("Аккаунт создан. Входим…", "success");
-      Sounds.success();
+      toast("Аккаунт создан. Входим…", "success"); Sounds.success();
       await this.doLogin(u, p1, true);
-    } catch (e) {
-      this.showError("reg-error", e.message || "Ошибка регистрации");
-    } finally {
-      btn.disabled = false; btn.textContent = "Create account";
-    }
+    } catch (e) { this.showError("reg-error", e.message || "Ошибка регистрации"); }
+    finally { btn.disabled = false; btn.textContent = "Create account"; }
   }
   async doLogin(username, password, silent = false) {
     if (!silent) this.clearAuthErrors();
     const u = username ?? $("login-username").value.trim();
     const p = password ?? $("login-password").value;
-    if (!u || !p) {
-      if (!silent) this.showError("login-error", "Введи nickname и пароль");
-      return;
-    }
+    if (!u || !p) { if (!silent) this.showError("login-error", "Введи nickname и пароль"); return; }
     const btn = $("btn-login");
     if (!silent) { btn.disabled = true; btn.textContent = "Входим…"; }
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: this.emailFromUsername(u), password: p,
-      });
+      const { data, error } = await supabase.auth.signInWithPassword({ email: this.emailFromUsername(u), password: p });
       if (error) throw error;
       this.user = data.user;
       try {
@@ -709,34 +2039,20 @@ class NEXORA {
         if (hasTotp) {
           const { data: aal } = await supabase.auth.mfa.getAuthenticatorAssuranceLevel();
           if (aal?.currentLevel === "aal1" && aal?.nextLevel === "aal2") {
-            this.showScreen("screen-auth");
-            this.showAuthCard("mfa");
-            return;
+            this.showScreen("screen-auth"); this.showAuthCard("mfa"); return;
           }
         }
       } catch (_) {}
       await this.loadProfile();
-      if (this.profile) {
-        this.rememberAccount({
-          id: this.user.id, username: this.profile.username,
-          nexora_id: this.profile.nexora_id, avatar_url: this.profile.avatar_url,
-        });
-      }
-      try {
-        await supabase.rpc("log_login_event", {
-          user_agent: navigator.userAgent || "", ip: null,
-        });
-      } catch (_) {}
-      toast("Добро пожаловать!", "success");
-      Sounds.success();
+      if (this.profile) this.rememberAccount({ id: this.user.id, username: this.profile.username, nexora_id: this.profile.nexora_id, avatar_url: this.profile.avatar_url });
+      try { await supabase.rpc("log_login_event", { user_agent: navigator.userAgent || "", ip: null }); } catch (_) {}
+      toast("Добро пожаловать!", "success"); Sounds.success();
       this.enterApp();
     } catch (e) {
       const msg = /invalid/i.test(e.message || "") ? "Неверный логин или пароль" : (e.message || "Ошибка входа");
       if (!silent) this.showError("login-error", msg);
       else throw e;
-    } finally {
-      if (!silent) { btn.disabled = false; btn.textContent = "Sign in"; }
-    }
+    } finally { if (!silent) { btn.disabled = false; btn.textContent = "Sign in"; } }
   }
   async doMfaVerify() {
     this.clearAuthErrors();
@@ -750,40 +2066,20 @@ class NEXORA {
       if (!totp) throw new Error("TOTP-фактор не найден");
       const { data: ch, error: cErr } = await supabase.auth.mfa.challenge({ factorId: totp.id });
       if (cErr) throw cErr;
-      const { error } = await supabase.auth.mfa.verify({
-        factorId: totp.id, challengeId: ch.id, code,
-      });
+      const { error } = await supabase.auth.mfa.verify({ factorId: totp.id, challengeId: ch.id, code });
       if (error) throw error;
       await this.loadProfile();
-      if (this.profile) {
-        this.rememberAccount({
-          id: this.user.id, username: this.profile.username,
-          nexora_id: this.profile.nexora_id, avatar_url: this.profile.avatar_url,
-        });
-      }
-      try {
-        await supabase.rpc("log_login_event", {
-          user_agent: navigator.userAgent || "", ip: null,
-        });
-      } catch (_) {}
-      toast("Проверено", "success");
-      Sounds.success();
+      if (this.profile) this.rememberAccount({ id: this.user.id, username: this.profile.username, nexora_id: this.profile.nexora_id, avatar_url: this.profile.avatar_url });
+      try { await supabase.rpc("log_login_event", { user_agent: navigator.userAgent || "", ip: null }); } catch (_) {}
+      toast("Проверено", "success"); Sounds.success();
       this.enterApp();
-    } catch (e) {
-      this.showError("mfa-error", e.message || "Неверный код");
-    } finally {
-      btn.disabled = false; btn.textContent = "Verify";
-    }
+    } catch (e) { this.showError("mfa-error", e.message || "Неверный код"); }
+    finally { btn.disabled = false; btn.textContent = "Verify"; }
   }
   async logout(silent = false) {
     if (!silent && !confirm("Выйти из NEXORA?")) return;
     try { await this.setOnline(false); } catch (_) {}
-    if (this.user && this.profile && !silent) {
-      this.rememberAccount({
-        id: this.user.id, username: this.profile.username,
-        nexora_id: this.profile.nexora_id, avatar_url: this.profile.avatar_url,
-      });
-    }
+    if (this.user && this.profile && !silent) this.rememberAccount({ id: this.user.id, username: this.profile.username, nexora_id: this.profile.nexora_id, avatar_url: this.profile.avatar_url });
     await supabase.auth.signOut();
     this.stopRealtime();
     this.stopGlobalRealtime();
@@ -796,52 +2092,37 @@ class NEXORA {
     this.showAuthCard("login");
   }
 
-  /* ============================================================
-     PROFILE / PRESENCE
-     ============================================================ */
+  /* PROFILE / PRESENCE */
   async loadProfile() {
     if (!this.user) return;
-    const { data, error } = await supabase
-      .from("profiles").select("*").eq("id", this.user.id).single();
+    const { data, error } = await supabase.from("profiles").select("*").eq("id", this.user.id).single();
     if (error) { console.error("loadProfile:", error); return; }
     this.profile = data;
   }
   async updateProfile(patch) {
-    const { data, error } = await supabase
-      .from("profiles").update(patch).eq("id", this.user.id).select().single();
+    const { data, error } = await supabase.from("profiles").update(patch).eq("id", this.user.id).select().single();
     if (error) throw error;
     this.profile = data;
     return data;
   }
   async setOnline(online) {
     if (!this.user) return;
-    /* Уважаем invisible: не выставляем is_online=true, если статус invisible */
     const status = this.profile?.status || "online";
     const effective = online && status !== "invisible";
     try {
-      await supabase.from("profiles").update({
-        is_online: effective, last_seen: new Date().toISOString(),
-      }).eq("id", this.user.id);
+      await supabase.from("profiles").update({ is_online: effective, last_seen: new Date().toISOString() }).eq("id", this.user.id);
       if (this.profile) this.profile.is_online = effective;
     } catch (_) {}
   }
   startPresence() {
     this.setOnline(true);
     this.presenceTimer = setInterval(() => this.setOnline(true), 60_000);
-    window.addEventListener("beforeunload", () => {
-      supabase.from("profiles").update({ is_online: false }).eq("id", this.user.id);
-    });
-    document.addEventListener("visibilitychange", () => {
-      this.setOnline(!document.hidden).catch(() => {});
-    });
+    window.addEventListener("beforeunload", () => { supabase.from("profiles").update({ is_online: false }).eq("id", this.user.id); });
+    document.addEventListener("visibilitychange", () => { this.setOnline(!document.hidden).catch(() => {}); });
   }
-  stopPresence() {
-    if (this.presenceTimer) { clearInterval(this.presenceTimer); this.presenceTimer = null; }
-  }
+  stopPresence() { if (this.presenceTimer) { clearInterval(this.presenceTimer); this.presenceTimer = null; } }
 
-  /* ============================================================
-     ENTER APP
-     ============================================================ */
+  /* ENTER APP */
   async enterApp() {
     this.showScreen("screen-app");
     document.documentElement.setAttribute("lang", currentLocale());
@@ -851,10 +2132,7 @@ class NEXORA {
     this.startPresence();
     this.requestNotificationPermission();
     try { await supabase.rpc("get_or_create_saved_chat"); } catch (_) {}
-    try {
-      const { data } = await supabase.rpc("get_or_create_notification_chat");
-      this.notificationChatId = data;
-    } catch (_) {}
+    try { const { data } = await supabase.rpc("get_or_create_notification_chat"); this.notificationChatId = data; } catch (_) {}
     await this.refreshChats();
     await this.refreshContacts();
     await this.loadReads();
@@ -871,34 +2149,29 @@ class NEXORA {
     $("welcome").classList.remove("hidden");
     this.updatePageTitle();
     await this.handleDeepLink();
+    await this.community.handleCommunityDeepLink();
   }
   renderSidebarFooter() {
     const me = this.profile;
     $("me-name").textContent = me.username;
     $("me-id").textContent = me.nexora_id;
     paintAvatar($("me-avatar"), me);
-    /* Значок рядом с именем, если есть */
     const wrap = $("me-name");
     if (me.badge_emoji) {
       if (!wrap.dataset.badgeApplied) {
         wrap.insertAdjacentHTML("afterend", `<span id="me-badge" style="margin-left:6px">${escapeHtml(me.badge_emoji)}</span>`);
         wrap.dataset.badgeApplied = "1";
-      } else {
-        const b = $("me-badge"); if (b) b.textContent = me.badge_emoji;
-      }
+      } else { const b = $("me-badge"); if (b) b.textContent = me.badge_emoji; }
     } else {
       const b = $("me-badge"); if (b) b.remove();
       delete wrap.dataset.badgeApplied;
     }
   }
 
-  /* ============================================================
-     UNREAD + READ RECEIPTS
-     ============================================================ */
+  /* UNREAD */
   async loadReads() {
     try {
-      const { data } = await supabase.from("chat_reads")
-        .select("chat_id, last_read_at").eq("user_id", this.user.id);
+      const { data } = await supabase.from("chat_reads").select("chat_id, last_read_at").eq("user_id", this.user.id);
       const map = {};
       (data || []).forEach(r => { map[r.chat_id] = r.last_read_at; });
       this.reads = map;
@@ -906,20 +2179,14 @@ class NEXORA {
   }
   async loadReadsByOther() {
     try {
-      const { data: mem } = await supabase.from("chat_members")
-        .select("chat_id").eq("user_id", this.user.id);
+      const { data: mem } = await supabase.from("chat_members").select("chat_id").eq("user_id", this.user.id);
       const ids = (mem || []).map(m => m.chat_id);
       if (!ids.length) { this.readsByOther = {}; return; }
-      const { data } = await supabase.from("chat_reads")
-        .select("chat_id, user_id, last_read_at")
-        .in("chat_id", ids)
-        .neq("user_id", this.user.id);
+      const { data } = await supabase.from("chat_reads").select("chat_id, user_id, last_read_at").in("chat_id", ids).neq("user_id", this.user.id);
       const map = {};
       (data || []).forEach(r => {
         if (!map[r.chat_id]) map[r.chat_id] = {};
-        if (!map[r.chat_id][r.user_id] || new Date(r.last_read_at) > new Date(map[r.chat_id][r.user_id])) {
-          map[r.chat_id][r.user_id] = r.last_read_at;
-        }
+        if (!map[r.chat_id][r.user_id] || new Date(r.last_read_at) > new Date(map[r.chat_id][r.user_id])) map[r.chat_id][r.user_id] = r.last_read_at;
       });
       this.readsByOther = map;
     } catch (_) { this.readsByOther = {}; }
@@ -943,11 +2210,7 @@ class NEXORA {
   async markChatRead(chatId) {
     const iso = new Date().toISOString();
     this.reads[chatId] = iso;
-    try {
-      await supabase.from("chat_reads").upsert({
-        user_id: this.user.id, chat_id: chatId, last_read_at: iso, updated_at: iso,
-      });
-    } catch (_) {}
+    try { await supabase.from("chat_reads").upsert({ user_id: this.user.id, chat_id: chatId, last_read_at: iso, updated_at: iso }); } catch (_) {}
     this.updatePageTitle();
   }
   unreadCountFor(chat) {
@@ -960,20 +2223,14 @@ class NEXORA {
     if (last.is_own) return 0;
     return new Date(last.created_at) > new Date(lastRead) ? 1 : 0;
   }
-  totalUnread() {
-    return this.chats.reduce((n, c) => n + this.unreadCountFor(c), 0);
-  }
+  totalUnread() { return this.chats.reduce((n, c) => n + this.unreadCountFor(c), 0); }
   updatePageTitle() {
     const n = this.totalUnread();
     document.title = n > 0 ? `(${n}) NEXORA — Connect without limits` : "NEXORA — Connect without limits";
   }
-  setupUnreadTitleUpdater() {
-    setInterval(() => this.updatePageTitle(), 5000);
-  }
+  setupUnreadTitleUpdater() { setInterval(() => this.updatePageTitle(), 5000); }
 
-  /* ============================================================
-     SIDEBAR
-     ============================================================ */
+  /* SIDEBAR */
   setTab(tab) {
     this.activeTab = tab;
     Sounds.click();
@@ -1006,8 +2263,7 @@ class NEXORA {
       let sub = chat.type === "saved" ? "Твои сохранённые сообщения" :
                 chat.is_notification ? "Уведомления о входах" : "Нет сообщений";
       if (last) {
-        const icon = { image: "🖼️ ", video: "🎬 ", file: "📎 ", sticker: "🎨 ",
-                       voice: "🎤 ", gif: "🎞️ ", poll: "📊 ", auth: "🔐 " }[last.kind] || "";
+        const icon = { image: "🖼️ ", video: "🎬 ", file: "📎 ", sticker: "🎨 ", voice: "🎤 ", gif: "🎞️ ", poll: "📊 ", auth: "🔐 " }[last.kind] || "";
         sub = (last.is_own ? "Ты: " : "") + icon + (last.content || "").slice(0, 60);
       }
       const typing = this.typingUsers[chat.id];
@@ -1020,9 +2276,8 @@ class NEXORA {
       else if (chat.type === "saved") badgeHTML = `<span class="list-item-badge-icon">${ICONS.star}</span>`;
       const botBadge = peer.is_bot ? ' <span class="bot-badge">[BOT]</span>' : "";
       const badgeEmoji = peer?.badge_emoji ? `<span style="margin-left:6px">${escapeHtml(peer.badge_emoji)}</span>` : "";
-      const avatarUser = chat.type === "saved" && !chat.is_notification
-        ? { username: "★" }
-        : chat.is_notification ? { username: "N" } : peer;
+      const avatarUser = chat.type === "saved" && !chat.is_notification ? { username: "★" }
+                        : chat.is_notification ? { username: "N" } : peer;
       let chanTag = "";
       if ((chat.type === "channel" || chat.type === "group") && chat.username) {
         chanTag = `<span class="channel-badge ${chat.is_public ? "public" : "private"}">@${escapeHtml(chat.username)}</span>`;
@@ -1040,10 +2295,7 @@ class NEXORA {
         </div>
         ${unread ? `<div class="list-item-badge">${unread}</div>` : ""}`;
       div.addEventListener("click", () => this.openChat(chat));
-      div.addEventListener("contextmenu", (e) => {
-        e.preventDefault();
-        this.openChatContextMenu(e, chat);
-      });
+      div.addEventListener("contextmenu", (e) => { e.preventDefault(); this.openChatContextMenu(e, chat); });
       container.appendChild(div);
     });
   }
@@ -1064,13 +2316,10 @@ class NEXORA {
       mk("🎨 Тема чата", () => this.openChatThemePicker(chat));
     } else {
       mk("✓ Отметить прочитанным", () => this.markChatRead(chat.id));
-      if (chat.type === "direct" && chat.peer) {
-        mk("👤 Открыть профиль", () => this.openUserProfile(chat.peer.id, chat.peer));
-      }
-      if ((chat.type === "channel" || chat.type === "group") &&
-          (chat.my_role === "owner" || chat.my_role === "admin")) {
+      if (chat.type === "direct" && chat.peer) mk("👤 Открыть профиль", () => this.openUserProfile(chat.peer.id, chat.peer));
+      if ((chat.type === "channel" || chat.type === "group") && (chat.my_role === "owner" || chat.my_role === "admin")) {
         mk(chat.type === "channel" ? "⚙ Настройки канала" : "⚙ Настройки группы",
-          () => chat.type === "channel" ? this.openChannelSettings(chat) : this.openGroupSettings(chat));
+           () => chat.type === "channel" ? this.openChannelSettings(chat) : this.openGroupSettings(chat));
         mk("🔗 Поделиться ссылкой", () => this.openChannelShare(chat));
       }
       mk("🎨 Тема чата", () => this.openChatThemePicker(chat));
@@ -1083,19 +2332,12 @@ class NEXORA {
     setTimeout(() => document.addEventListener("click", this.closeContextMenu, { once: true }), 0);
   }
   async hideChatForMe(chat) {
-    if (chat.type === "saved" && !chat.is_notification) {
-      toast("Чат «Избранное» нельзя удалить", "warning"); return;
-    }
-    if (chat.is_notification) {
-      toast("Служебный чат NEXORA нельзя удалить", "warning"); return;
-    }
+    if (chat.type === "saved" && !chat.is_notification) { toast("Чат «Избранное» нельзя удалить", "warning"); return; }
+    if (chat.is_notification) { toast("Служебный чат NEXORA нельзя удалить", "warning"); return; }
     if (!confirm(`Удалить чат «${chat.display_title}» только у себя?`)) return;
     try {
-      await supabase.from("chat_members")
-        .update({ hidden_until: new Date().toISOString() })
-        .eq("chat_id", chat.id).eq("user_id", this.user.id);
-      toast("Чат удалён у тебя", "warning");
-      Sounds.click();
+      await supabase.from("chat_members").update({ hidden_until: new Date().toISOString() }).eq("chat_id", chat.id).eq("user_id", this.user.id);
+      toast("Чат удалён у тебя", "warning"); Sounds.click();
       await this.refreshChats();
       if (this.activeChat?.id === chat.id) {
         this.activeChat = null;
@@ -1105,21 +2347,13 @@ class NEXORA {
     } catch (e) { toast(e.message || "Ошибка", "error"); }
   }
 
-  /* ============================================================
-     CHAT THEMES
-     ============================================================ */
+  /* CHAT THEMES */
   openChatThemePicker(chat) {
     const themes = Object.entries(CHAT_THEME_ACCENTS);
     this.openModal({
-      title: "Тема чата",
-      narrow: true,
+      title: "Тема чата", narrow: true,
       body: (body) => {
-        body.innerHTML = `
-          <p style="color:var(--text-2);font-size:13px;margin-bottom:12px">
-            Акцент темы применяется только в этом чате и только для тебя.
-          </p>
-          <div class="theme-grid" id="chat-theme-grid"></div>
-        `;
+        body.innerHTML = `<p style="color:var(--text-2);font-size:13px;margin-bottom:12px">Акцент темы применяется только в этом чате и только для тебя.</p><div class="theme-grid" id="chat-theme-grid"></div>`;
         const grid = body.querySelector("#chat-theme-grid");
         const currentAccent = this.theme[chat.id]?.accent || null;
         themes.forEach(([key, info]) => {
@@ -1127,21 +2361,16 @@ class NEXORA {
           tile.className = "theme-tile";
           const c = info.accent || "#7c5cff";
           tile.style.background = "#16161f";
-          tile.innerHTML = `
-            <div class="tt-dot" style="background:${c}"></div>
-            <div class="tt-body" style="background:${c}">${escapeHtml(info.name)}</div>
-          `;
+          tile.innerHTML = `<div class="tt-dot" style="background:${c}"></div><div class="tt-body" style="background:${c}">${escapeHtml(info.name)}</div>`;
           if ((currentAccent || null) === info.accent) tile.classList.add("active");
           tile.addEventListener("click", async () => {
             await this.saveChatTheme(chat.id, info.accent, this.theme[chat.id]?.wallpaper_url || null);
             grid.querySelectorAll(".theme-tile").forEach(x => x.classList.remove("active"));
             tile.classList.add("active");
-            toast("Тема чата обновлена", "success");
-            Sounds.success();
+            toast("Тема чата обновлена", "success"); Sounds.success();
           });
           grid.appendChild(tile);
         });
-
         const wallSec = document.createElement("div");
         wallSec.className = "settings-section";
         wallSec.style.marginTop = "14px";
@@ -1150,39 +2379,24 @@ class NEXORA {
         wallInp.placeholder = "https://example.com/wallpaper.jpg";
         wallInp.value = this.theme[chat.id]?.wallpaper_url || "";
         const wallSave = document.createElement("button");
-        wallSave.className = "btn btn-primary";
-        wallSave.style.marginTop = "8px";
-        wallSave.textContent = "Применить обои";
+        wallSave.className = "btn btn-primary"; wallSave.style.marginTop = "8px"; wallSave.textContent = "Применить обои";
         wallSave.addEventListener("click", async () => {
           const u = wallInp.value.trim();
           if (u && !safeUrl(u)) return toast("Ссылка должна начинаться с http(s)://", "warning");
           await this.saveChatTheme(chat.id, currentAccent, u || null);
-          toast("Обои сохранены", "success");
-          Sounds.success();
+          toast("Обои сохранены", "success"); Sounds.success();
         });
         const wallClear = document.createElement("button");
-        wallClear.className = "btn btn-ghost";
-        wallClear.style.marginTop = "8px";
-        wallClear.style.marginLeft = "8px";
-        wallClear.textContent = "Убрать";
-        wallClear.addEventListener("click", async () => {
-          wallInp.value = "";
-          await this.saveChatTheme(chat.id, currentAccent, null);
-          toast("Обои убраны", "warning");
-        });
-        wallSec.appendChild(wallInp);
-        wallSec.appendChild(wallSave);
-        wallSec.appendChild(wallClear);
+        wallClear.className = "btn btn-ghost"; wallClear.style.marginTop = "8px"; wallClear.style.marginLeft = "8px"; wallClear.textContent = "Убрать";
+        wallClear.addEventListener("click", async () => { wallInp.value = ""; await this.saveChatTheme(chat.id, currentAccent, null); toast("Обои убраны", "warning"); });
+        wallSec.appendChild(wallInp); wallSec.appendChild(wallSave); wallSec.appendChild(wallClear);
         body.appendChild(wallSec);
       },
     });
   }
   async saveChatTheme(chatId, accent, wallpaper) {
     try {
-      await supabase.from("chat_themes").upsert({
-        user_id: this.user.id, chat_id: chatId,
-        accent: accent, wallpaper_url: wallpaper,
-      });
+      await supabase.from("chat_themes").upsert({ user_id: this.user.id, chat_id: chatId, accent, wallpaper_url: wallpaper });
       if (!this.theme[chatId]) this.theme[chatId] = {};
       this.theme[chatId].accent = accent;
       this.theme[chatId].wallpaper_url = wallpaper;
@@ -1195,32 +2409,23 @@ class NEXORA {
       const { data } = await supabase.from("chat_themes").select("*").eq("user_id", this.user.id);
       const map = {};
       (data || []).forEach(t2 => { map[t2.chat_id] = { accent: t2.accent, wallpaper_url: t2.wallpaper_url }; });
-      this.theme = map;
-      this._themeLoadedFor = this.user.id;
+      this.theme = map; this._themeLoadedFor = this.user.id;
     } catch (_) {}
   }
   applyChatThemeToUI(chatId) {
     const t2 = this.theme[chatId];
-    const box = $("messages");
-    if (!box) return;
+    const box = $("messages"); if (!box) return;
     if (t2?.wallpaper_url) {
       box.style.backgroundImage = `url('${safeUrl(t2.wallpaper_url)}')`;
       box.style.backgroundSize = "cover";
       box.style.backgroundPosition = "center";
-    } else {
-      box.style.backgroundImage = "";
-    }
+    } else box.style.backgroundImage = "";
     applyChatTheme(t2 || null);
   }
 
-  /* ============================================================
-     CONTACTS
-     ============================================================ */
+  /* CONTACTS */
   renderContactsList(container) {
-    if (!this.contacts.length) {
-      container.innerHTML = `<div class="empty-state">Нет контактов.<br>Найди пользователя по NEXORA ID или нику.</div>`;
-      return;
-    }
+    if (!this.contacts.length) { container.innerHTML = `<div class="empty-state">Нет контактов.<br>Найди пользователя по NEXORA ID или нику.</div>`; return; }
     this.contacts.forEach(c => {
       const div = document.createElement("div");
       div.className = "list-item";
@@ -1236,52 +2441,30 @@ class NEXORA {
   }
   async refreshContacts() {
     try {
-      const { data, error } = await supabase
-        .from("contacts")
-        .select("contact_id, profile:profiles!contacts_contact_id_fkey(*)")
-        .eq("owner_id", this.user.id);
+      const { data, error } = await supabase.from("contacts").select("contact_id, profile:profiles!contacts_contact_id_fkey(*)").eq("owner_id", this.user.id);
       if (error) throw error;
       let nickMap = {};
       try {
-        const { data: nicks } = await supabase
-          .from("contact_nicknames").select("contact_id, nickname").eq("owner_id", this.user.id);
+        const { data: nicks } = await supabase.from("contact_nicknames").select("contact_id, nickname").eq("owner_id", this.user.id);
         (nicks || []).forEach(n => { nickMap[n.contact_id] = n.nickname; });
       } catch (_) {}
-      this.contacts = (data || []).map(r => {
-        const p = r.profile;
-        if (!p) return null;
-        p.nickname = nickMap[p.id] || null;
-        return p;
-      }).filter(Boolean);
-    } catch (e) {
-      console.error("refreshContacts:", e);
-      this.contacts = [];
-    }
+      this.contacts = (data || []).map(r => { const p = r.profile; if (!p) return null; p.nickname = nickMap[p.id] || null; return p; }).filter(Boolean);
+    } catch (e) { console.error("refreshContacts:", e); this.contacts = []; }
     if (this.activeTab === "contacts") this.renderSidebarList();
   }
   async addContact(contactId) {
     if (contactId === this.user.id) throw new Error("Нельзя добавить себя");
-    const { error } = await supabase.from("contacts").insert({
-      owner_id: this.user.id, contact_id: contactId,
-    });
+    const { error } = await supabase.from("contacts").insert({ owner_id: this.user.id, contact_id: contactId });
     if (error && error.code !== "23505") throw error;
   }
 
-  /* ============================================================
-     CHATS
-     ============================================================ */
+  /* CHATS */
   async refreshChats() {
     try {
-      const { data: mem } = await supabase
-        .from("chat_members").select("chat_id, hidden_until").eq("user_id", this.user.id);
+      const { data: mem } = await supabase.from("chat_members").select("chat_id, hidden_until").eq("user_id", this.user.id);
       const visible = (mem || []).filter(m => !m.hidden_until);
       const ids = visible.map(m => m.chat_id);
-      if (!ids.length) {
-        this.chats = [];
-        if (this.activeTab === "chats") this.renderSidebarList();
-        this.updatePageTitle();
-        return;
-      }
+      if (!ids.length) { this.chats = []; if (this.activeTab === "chats") this.renderSidebarList(); this.updatePageTitle(); return; }
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
       const [{ data: chats }, { data: members }, { data: msgs }, { data: nicks }, { data: notifs }] = await Promise.all([
         supabase.from("chats").select("id, is_group, title, type, avatar_url, updated_at, owner_id, username, is_public, invite_token, is_ephemeral, expires_at").in("id", ids),
@@ -1309,18 +2492,13 @@ class NEXORA {
         else display = peer ? (peer.nickname || peer.username) : (c.title || "Chat");
         return {
           id: c.id, is_group: c.is_group, type: ctype,
-          title: c.title,
-          avatar_url: c.avatar_url, owner_id: c.owner_id,
+          title: c.title, avatar_url: c.avatar_url, owner_id: c.owner_id,
           username: c.username, is_public: c.is_public, invite_token: c.invite_token,
           is_ephemeral: c.is_ephemeral, expires_at: c.expires_at,
           updated_at: c.updated_at, my_role: myMem?.role || "member",
-          peer, display_title: display,
-          members_count: mems.length,
+          peer, display_title: display, members_count: mems.length,
           is_notification: notifIds.has(c.id),
-          last_message: last ? {
-            content: last.content || "", kind: last.kind || "text",
-            created_at: last.created_at, is_own: last.sender_id === this.user.id,
-          } : null,
+          last_message: last ? { content: last.content || "", kind: last.kind || "text", created_at: last.created_at, is_own: last.sender_id === this.user.id } : null,
         };
       }).sort((a, b) => {
         const rankA = a.is_notification ? 0 : a.type === "saved" ? 1 : 2;
@@ -1332,40 +2510,25 @@ class NEXORA {
       });
       if (this.activeTab === "chats") this.renderSidebarList();
       this.updatePageTitle();
-    } catch (e) {
-      console.error("refreshChats:", e);
-      this.chats = [];
-      if (this.activeTab === "chats") this.renderSidebarList();
-    }
+    } catch (e) { console.error("refreshChats:", e); this.chats = []; if (this.activeTab === "chats") this.renderSidebarList(); }
   }
-
   scheduleRefreshChats(delay = 300) {
     clearTimeout(this._chatsReloadTimer);
-    this._chatsReloadTimer = setTimeout(() => {
-      this._chatsReloadTimer = null;
-      this.refreshChats().catch(() => {});
-    }, delay);
+    this._chatsReloadTimer = setTimeout(() => { this._chatsReloadTimer = null; this.refreshChats().catch(() => {}); }, delay);
   }
   scheduleReloadMembers(delay = 200) {
     if (!this.activeChat) return;
     clearTimeout(this._membersReloadTimer);
-    this._membersReloadTimer = setTimeout(() => {
-      this._membersReloadTimer = null;
-      this.loadMembers().catch(() => {});
-    }, delay);
+    this._membersReloadTimer = setTimeout(() => { this._membersReloadTimer = null; this.loadMembers().catch(() => {}); }, delay);
   }
 
   async openDirectChat(peer) {
     try {
       const { data, error } = await supabase.rpc("get_or_create_direct_chat", { other_user: peer.id });
       if (error) throw error;
-      await supabase.from("chat_members")
-        .update({ hidden_until: null }).eq("chat_id", data).eq("user_id", this.user.id);
+      await supabase.from("chat_members").update({ hidden_until: null }).eq("chat_id", data).eq("user_id", this.user.id);
       await this.refreshChats();
-      const chat = this.chats.find(c => c.id === data) || {
-        id: data, type: "direct", peer,
-        display_title: peer.nickname || peer.username, members_count: 2,
-      };
+      const chat = this.chats.find(c => c.id === data) || { id: data, type: "direct", peer, display_title: peer.nickname || peer.username, members_count: 2 };
       this.openChat(chat);
     } catch (e) { console.error(e); toast("Не удалось открыть чат", "error"); }
   }
@@ -1416,9 +2579,7 @@ class NEXORA {
     else if (ctype === "saved") title = "Избранное";
     else title = chat.peer?.nickname || chat.display_title;
     let chanTag = "";
-    if ((ctype === "channel" || ctype === "group") && chat.username) {
-      chanTag = `<span class="channel-badge ${chat.is_public ? "public" : "private"}">@${escapeHtml(chat.username)}</span>`;
-    }
+    if ((ctype === "channel" || ctype === "group") && chat.username) chanTag = `<span class="channel-badge ${chat.is_public ? "public" : "private"}">@${escapeHtml(chat.username)}</span>`;
     let ephTag = "";
     if (chat.is_ephemeral && chat.expires_at) {
       const left = Math.max(0, Math.floor((new Date(chat.expires_at) - new Date()) / 60000));
@@ -1431,10 +2592,7 @@ class NEXORA {
     else if (ctype === "channel") $("chat-peer-sub").textContent = `${chat.is_public ? "публичный" : "приватный"} канал · ${chat.members_count || 0} подписчиков`;
     else if (ctype === "group") $("chat-peer-sub").textContent = `${chat.is_public ? "публичная" : "приватная"} группа · ${chat.members_count || 0} участников`;
     else $("chat-peer-sub").textContent = chat.peer?.nexora_id || (chat.members_count ? `${chat.members_count} участников` : "");
-    paintAvatar($("chat-peer-avatar"), chat.type === "saved" && !chat.is_notification
-      ? { username: "★" }
-      : chat.is_notification ? { username: "N" }
-      : (chat.peer || { username: chat.display_title }));
+    paintAvatar($("chat-peer-avatar"), chat.type === "saved" && !chat.is_notification ? { username: "★" } : chat.is_notification ? { username: "N" } : (chat.peer || { username: chat.display_title }));
     const blocked = ctype === "channel" && !["owner", "admin"].includes(chat.my_role);
     $("composer").disabled = blocked;
     $("btn-send").disabled = blocked;
@@ -1455,8 +2613,7 @@ class NEXORA {
     this._activeBotCommands = [];
     if (chat.peer?.is_bot) {
       try {
-        const { data } = await supabase
-          .from("custom_bots").select("commands").eq("bot_user_id", chat.peer.id).maybeSingle();
+        const { data } = await supabase.from("custom_bots").select("commands").eq("bot_user_id", chat.peer.id).maybeSingle();
         if (data?.commands) this._activeBotCommands = data.commands;
       } catch (_) {}
     }
@@ -1477,7 +2634,6 @@ class NEXORA {
     this.startPolling(chat.id);
     this.markChatRead(chat.id);
     this.hideReplyPreview();
-    /* Скрываем локально удалённые сообщения */
     this.applyHiddenFilter();
   }
   applyHiddenFilter() {
@@ -1492,12 +2648,9 @@ class NEXORA {
     } catch (e) { console.error(e); this.members = []; }
   }
   async loadMessages() {
-    const { data, error } = await supabase
-      .from("messages")
+    const { data, error } = await supabase.from("messages")
       .select("id, chat_id, sender_id, content, kind, sticker_id, attachment_url, attachment_type, file_name, file_size, edited_at, created_at, reply_to, pinned, pinned_at, channel_post_id, expires_at, deleted_at, deleted_by")
-      .eq("chat_id", this.activeChat.id)
-      .order("created_at", { ascending: true })
-      .limit(500);
+      .eq("chat_id", this.activeChat.id).order("created_at", { ascending: true }).limit(500);
     if (error) { console.error(error); this.messages = []; return; }
     this.messages = (data || []).filter(m => !this.hiddenMsgs.has(m.id));
   }
@@ -1505,9 +2658,7 @@ class NEXORA {
     try {
       const ids = this.messages.map(m => m.id);
       if (!ids.length) { this.reactions = {}; return; }
-      const { data, error } = await supabase
-        .from("reactions").select("message_id, user_id, emoji")
-        .in("message_id", ids);
+      const { data, error } = await supabase.from("reactions").select("message_id, user_id, emoji").in("message_id", ids);
       if (error) throw error;
       const map = {};
       (data || []).forEach(r => {
@@ -1520,8 +2671,7 @@ class NEXORA {
   }
   async loadPolls() {
     try {
-      const { data, error } = await supabase
-        .from("polls")
+      const { data, error } = await supabase.from("polls")
         .select("id, chat_id, message_id, author_id, question, options, is_quiz, correct_index, is_anonymous, allows_multiple, closed")
         .eq("chat_id", this.activeChat.id);
       if (error) throw error;
@@ -1529,8 +2679,7 @@ class NEXORA {
       (data || []).forEach(p => { if (p.message_id) map[p.message_id] = { ...p, votes: {} }; });
       const pollIds = (data || []).map(p => p.id);
       if (pollIds.length) {
-        const { data: votes } = await supabase
-          .from("poll_votes").select("poll_id, user_id, option_indices").in("poll_id", pollIds);
+        const { data: votes } = await supabase.from("poll_votes").select("poll_id, user_id, option_indices").in("poll_id", pollIds);
         (votes || []).forEach(v => {
           const poll = Object.values(map).find(p => p.id === v.poll_id);
           if (poll) poll.votes[v.user_id] = v.option_indices || [];
@@ -1588,22 +2737,15 @@ class NEXORA {
     });
   }
   async blockUser(userId) {
-    const { error } = await supabase.from("blocks").insert({
-      blocker_id: this.user.id, blocked_id: userId,
-    });
+    const { error } = await supabase.from("blocks").insert({ blocker_id: this.user.id, blocked_id: userId });
     if (error && error.code !== "23505") throw error;
   }
 
-  /* ============================================================
-     RENDER MESSAGES
-     ============================================================ */
+  /* RENDER MESSAGES */
   renderMessages() {
     const box = $("messages");
     box.innerHTML = "";
-    if (!this.messages.length) {
-      box.innerHTML = `<div class="empty-state">Нет сообщений. Напиши первое!</div>`;
-      return;
-    }
+    if (!this.messages.length) { box.innerHTML = `<div class="empty-state">Нет сообщений. Напиши первое!</div>`; return; }
     this.visibleStart = Math.max(0, this.messages.length - this.virtualWindow);
     this.paintMessageWindow();
     box.removeEventListener("scroll", this._onScrollHandler || (() => {}));
@@ -1695,8 +2837,7 @@ class NEXORA {
         rp.className = "msg-reply";
         const parentSender = this.members.find(x => x.user_id === parent.sender_id);
         const parentName = parent.sender_id === this.user.id ? "Ты" : (parentSender?.username || "User");
-        rp.innerHTML = `<div class="msg-reply-name">${escapeHtml(parentName)}</div>
-          <div class="msg-reply-text">${escapeHtml((parent.content || "").slice(0, 80))}</div>`;
+        rp.innerHTML = `<div class="msg-reply-name">${escapeHtml(parentName)}</div><div class="msg-reply-text">${escapeHtml((parent.content || "").slice(0, 80))}</div>`;
         rp.addEventListener("click", () => {
           const el = document.querySelector(`[data-message-id="${parent.id}"]`);
           if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -1726,10 +2867,7 @@ class NEXORA {
       const commentsBtn = document.createElement("button");
       commentsBtn.className = "comments-btn";
       commentsBtn.textContent = `💬 ${t("comments")}`;
-      commentsBtn.addEventListener("click", (e) => {
-        e.stopPropagation();
-        this.openCommentsFor(m);
-      });
+      commentsBtn.addEventListener("click", (e) => { e.stopPropagation(); this.openCommentsFor(m); });
       bubble.appendChild(commentsBtn);
     }
 
@@ -1742,10 +2880,7 @@ class NEXORA {
         const chip = document.createElement("div");
         chip.className = "reaction-chip" + (rx[emoji].includes(this.user.id) ? " mine" : "");
         chip.textContent = `${emoji} ${rx[emoji].length}`;
-        chip.addEventListener("click", (e) => {
-          e.stopPropagation();
-          this.showReactionVoters(m.id, emoji);
-        });
+        chip.addEventListener("click", (e) => { e.stopPropagation(); this.showReactionVoters(m.id, emoji); });
         rbox.appendChild(chip);
       });
       bubble.appendChild(rbox);
@@ -1756,14 +2891,10 @@ class NEXORA {
     let statusHTML = "";
     if (isOwn) {
       const isRead = this.isMessageRead(m);
-      statusHTML = `<span class="msg-status${isRead ? " read" : ""}">
-        <span class="check">${isRead ? "✓✓" : "✓"}</span>
-      </span>`;
+      statusHTML = `<span class="msg-status${isRead ? " read" : ""}"><span class="check">${isRead ? "✓✓" : "✓"}</span></span>`;
     }
-    meta.innerHTML = `${m.edited_at ? '<span class="msg-edited">(изменено)</span>' : ""}
-      <span>${escapeHtml(formatTime(m.created_at))}</span>${statusHTML}`;
+    meta.innerHTML = `${m.edited_at ? '<span class="msg-edited">(изменено)</span>' : ""}<span>${escapeHtml(formatTime(m.created_at))}</span>${statusHTML}`;
     bubble.appendChild(meta);
-
     row.appendChild(bubble);
 
     let clickTimer = null;
@@ -1771,17 +2902,10 @@ class NEXORA {
       if (e.target.closest("a")) return;
       if (e.target.closest(".comments-btn")) return;
       if (e.target.closest(".reaction-chip")) return;
-      if (clickTimer) {
-        clearTimeout(clickTimer); clickTimer = null;
-        this.openReactionPicker(e, m);
-      } else {
-        clickTimer = setTimeout(() => { clickTimer = null; }, 260);
-      }
+      if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; this.openReactionPicker(e, m); }
+      else clickTimer = setTimeout(() => { clickTimer = null; }, 260);
     });
-    row.addEventListener("contextmenu", (e) => {
-      e.preventDefault();
-      this.openMessageContextMenu(e, m, isOwn);
-    });
+    row.addEventListener("contextmenu", (e) => { e.preventDefault(); this.openMessageContextMenu(e, m, isOwn); });
     return row;
   }
   renderPoll(bubble, poll, msg) {
@@ -1795,9 +2919,7 @@ class NEXORA {
     const myVote = poll.votes[this.user.id] || [];
     const totalVotes = Object.keys(poll.votes).length;
     const counts = options.map(() => 0);
-    Object.values(poll.votes).forEach(voteArr => {
-      (voteArr || []).forEach(i => { if (counts[i] != null) counts[i] += 1; });
-    });
+    Object.values(poll.votes).forEach(voteArr => { (voteArr || []).forEach(i => { if (counts[i] != null) counts[i] += 1; }); });
     options.forEach((opt, idx) => {
       const optEl = document.createElement("div");
       optEl.className = "poll-option";
@@ -1816,16 +2938,11 @@ class NEXORA {
             else if (uid === this.user.id) voterNames.push("Ты");
           }
         });
-        if (voterNames.length) {
-          votersHTML = `<div class="poll-voters">${escapeHtml(voterNames.slice(0, 5).join(", "))}${voterNames.length > 5 ? " +" + (voterNames.length - 5) : ""}</div>`;
-        }
+        if (voterNames.length) votersHTML = `<div class="poll-voters">${escapeHtml(voterNames.slice(0, 5).join(", "))}${voterNames.length > 5 ? " +" + (voterNames.length - 5) : ""}</div>`;
       }
       optEl.innerHTML = `
         <div class="poll-option-bar" style="width:${pct}%"></div>
-        <div class="poll-option-text">
-          <span><span class="poll-checkbox"></span>${escapeHtml(opt)}</span>
-          <span class="poll-option-pct">${pct}%</span>
-        </div>${votersHTML}`;
+        <div class="poll-option-text"><span><span class="poll-checkbox"></span>${escapeHtml(opt)}</span><span class="poll-option-pct">${pct}%</span></div>${votersHTML}`;
       optEl.addEventListener("click", async () => {
         if (poll.closed) return toast("Опрос закрыт", "warning");
         let newVote;
@@ -1849,10 +2966,7 @@ class NEXORA {
     const meta = document.createElement("div");
     meta.className = "poll-meta";
     const votesWord = totalVotes === 1 ? "голос" : (totalVotes < 5 ? "голоса" : "голосов");
-    meta.textContent = `${totalVotes} ${votesWord}` +
-      (poll.is_anonymous ? " · анонимный" : "") +
-      (poll.allows_multiple ? " · несколько вариантов" : "") +
-      (poll.closed ? " · закрыт" : "");
+    meta.textContent = `${totalVotes} ${votesWord}` + (poll.is_anonymous ? " · анонимный" : "") + (poll.allows_multiple ? " · несколько вариантов" : "") + (poll.closed ? " · закрыт" : "");
     card.appendChild(meta);
     bubble.appendChild(card);
   }
@@ -1861,17 +2975,13 @@ class NEXORA {
     const kind = m.kind || "text";
     if (kind === "sticker") {
       let url = m.attachment_url;
-      if (!url && m.sticker_id?.startsWith("sys-")) {
-        url = SYSTEM_STICKERS.find(s => s.id === m.sticker_id)?.url || "";
-      }
+      if (!url && m.sticker_id?.startsWith("sys-")) url = SYSTEM_STICKERS.find(s => s.id === m.sticker_id)?.url || "";
       if (url) {
         const img = document.createElement("img");
         img.className = "msg-sticker"; img.src = url; img.alt = "sticker";
         el.appendChild(img);
       }
-      if ((m.content || "").trim()) {
-        const c = document.createElement("div"); c.innerHTML = renderMarkdown(m.content); el.appendChild(c);
-      }
+      if ((m.content || "").trim()) { const c = document.createElement("div"); c.innerHTML = renderMarkdown(m.content); el.appendChild(c); }
       return;
     }
     if (kind === "image" && m.attachment_url) {
@@ -1884,30 +2994,28 @@ class NEXORA {
       return;
     }
     if (kind === "video" && m.attachment_url) {
-      const v = document.createElement("video");
-      v.className = "msg-video"; v.src = m.attachment_url; v.controls = true; v.preload = "metadata";
-      el.appendChild(v);
+      const vp = new VideoPlayerWidget(m.attachment_url, { fileName: m.file_name, fileSize: m.file_size });
+      el.appendChild(vp.render());
       if ((m.content || "").trim()) { const c = document.createElement("div"); c.innerHTML = renderMarkdown(m.content); el.appendChild(c); }
       return;
     }
     if (kind === "voice" && m.attachment_url) {
-      const a = document.createElement("audio");
-      a.controls = true; a.src = m.attachment_url;
-      a.style.cssText = "max-width:280px;margin:4px 0";
-      el.appendChild(a);
+      const ap = new AudioPlayerWidget(m.attachment_url, { fileName: "", fileSize: m.file_size, compact: true });
+      el.appendChild(ap.render());
       return;
     }
     if (kind === "file" && m.attachment_url) {
+      const isAudio = (m.attachment_type || "").startsWith("audio/") || /\.(mp3|wav|ogg|flac|m4a|aac|opus)$/i.test(m.file_name || "");
+      if (isAudio) {
+        const ap = new AudioPlayerWidget(m.attachment_url, { fileName: m.file_name, fileSize: m.file_size, compact: false });
+        el.appendChild(ap.render());
+        if ((m.content || "").trim()) { const c = document.createElement("div"); c.innerHTML = renderMarkdown(m.content); el.appendChild(c); }
+        return;
+      }
       const a = document.createElement("a");
       a.className = "msg-file"; a.href = m.attachment_url;
-      a.target = "_blank"; a.rel = "noopener noreferrer";
-      a.download = m.file_name || "";
-      a.innerHTML = `
-        <div class="msg-file-icon">${this.fileIcon(m.file_name)}</div>
-        <div>
-          <div class="msg-file-name">${escapeHtml(m.file_name || "Файл")}</div>
-          <div class="msg-file-size">${escapeHtml(humanSize(m.file_size))}</div>
-        </div>`;
+      a.target = "_blank"; a.rel = "noopener noreferrer"; a.download = m.file_name || "";
+      a.innerHTML = `<div class="msg-file-icon">${this.fileIcon(m.file_name)}</div><div><div class="msg-file-name">${escapeHtml(m.file_name || "Файл")}</div><div class="msg-file-size">${escapeHtml(humanSize(m.file_size))}</div></div>`;
       el.appendChild(a);
       if ((m.content || "").trim()) { const c = document.createElement("div"); c.innerHTML = renderMarkdown(m.content); el.appendChild(c); }
       return;
@@ -1921,14 +3029,10 @@ class NEXORA {
     if (!matches.length) return;
     const codes = [...new Set(matches.map(m => m[1]))];
     try {
-      const { data } = await supabase
-        .from("custom_emojis").select("shortcode, url").in("shortcode", codes).limit(50);
+      const { data } = await supabase.from("custom_emojis").select("shortcode, url").in("shortcode", codes).limit(50);
       if (!data || !data.length) return;
       let newHtml = html;
-      data.forEach(e => {
-        const re = new RegExp(`:${e.shortcode}:`, "g");
-        newHtml = newHtml.replace(re, `<img class="custom-emoji" src="${safeUrl(e.url)}" alt=":${e.shortcode}:">`);
-      });
+      data.forEach(e => { const re = new RegExp(`:${e.shortcode}:`, "g"); newHtml = newHtml.replace(re, `<img class="custom-emoji" src="${safeUrl(e.url)}" alt=":${e.shortcode}:">`); });
       el.innerHTML = newHtml;
     } catch (_) {}
   }
@@ -1947,10 +3051,7 @@ class NEXORA {
   highlightSearch() {
     if (!this.messageSearchQuery) return;
     const q = this.messageSearchQuery.toLowerCase();
-    $$(".msg-content").forEach(el => {
-      const html = el.innerHTML;
-      if (html.toLowerCase().includes(q)) el.parentElement?.classList.add("search-hit");
-    });
+    $$(".msg-content").forEach(el => { if (el.innerHTML.toLowerCase().includes(q)) el.parentElement?.classList.add("search-hit"); });
   }
   openLightbox(url, kind) {
     const lb = document.createElement("div");
@@ -1963,9 +3064,7 @@ class NEXORA {
     document.body.appendChild(lb);
   }
 
-  /* ============================================================
-     MESSAGE CONTEXT MENU
-     ============================================================ */
+  /* MESSAGE CONTEXT MENU */
   openMessageContextMenu(event, msg, isOwn) {
     this.closeContextMenu();
     if (msg.deleted_at) return;
@@ -1982,10 +3081,7 @@ class NEXORA {
     const more = document.createElement("button");
     more.textContent = "＋";
     more.title = "Больше реакций";
-    more.addEventListener("click", (ev) => {
-      this.closeContextMenu();
-      this.openReactionPicker(ev, msg);
-    });
+    more.addEventListener("click", (ev) => { this.closeContextMenu(); this.openReactionPicker(ev, msg); });
     rxRow.appendChild(more);
     menu.appendChild(rxRow);
     const mk = (label, handler, danger = false) => {
@@ -1997,20 +3093,13 @@ class NEXORA {
     };
     mk(`↩ ${t("reply")}`, () => this.setReplyTo(msg));
     if (isOwn && (msg.kind || "text") === "text") mk(`✎ ${t("edit")}`, () => this.editMessage(msg));
-    mk(`📋 ${t("copy")}`, () => {
-      navigator.clipboard.writeText(msg.content || msg.attachment_url || "");
-      toast("Скопировано", "success"); Sounds.click();
-    });
+    mk(`📋 ${t("copy")}`, () => { navigator.clipboard.writeText(msg.content || msg.attachment_url || ""); toast("Скопировано", "success"); Sounds.click(); });
     mk("🔗 Ссылка на сообщение", () => this.copyMessageLink(msg));
     mk("↪ Переслать", () => this.forwardMessage(msg));
-    if (this.activeChat?.type !== "saved" && !this.activeChat?.is_notification) {
-      mk("⭐ В избранное", () => this.saveToFavorites(msg));
-    }
+    if (this.activeChat?.type !== "saved" && !this.activeChat?.is_notification) mk("⭐ В избранное", () => this.saveToFavorites(msg));
     mk(msg.pinned ? "📌 Открепить" : "📌 Закрепить", () => this.togglePin(msg));
     mk("🗑 Удалить у себя", () => this.deleteMessageForMe(msg), true);
-    if (isOwn || this.canDeleteForEveryone()) {
-      mk("🗑 Удалить у всех", () => this.deleteMessageForEveryone(msg), true);
-    }
+    if (isOwn || this.canDeleteForEveryone()) mk("🗑 Удалить у всех", () => this.deleteMessageForEveryone(msg), true);
     document.body.appendChild(menu);
     const r = event.target.getBoundingClientRect();
     const mw = menu.offsetWidth, mh = menu.offsetHeight;
@@ -2026,18 +3115,15 @@ class NEXORA {
     return role === "owner" || role === "admin";
   }
 
-  /* ============================================================
-     REACTION PICKER (полный)
-     ============================================================ */
+  /* REACTION PICKER */
   openReactionPicker(event, msg) {
     this.closeContextMenu();
     const wrap = document.createElement("div");
-    wrap.className = "reaction-picker";
-    wrap.id = "ctx-menu";
+    wrap.className = "reaction-picker"; wrap.id = "ctx-menu";
     const recent = lsGet(RECENT_REACTIONS_KEY, []);
     const renderBody = (filter = "") => {
-      wrap.querySelector(".rp-body").innerHTML = "";
       const body = wrap.querySelector(".rp-body");
+      body.innerHTML = "";
       const f = filter.trim().toLowerCase();
       Object.entries(EMOJI_CATEGORIES).forEach(([cat, list]) => {
         const items = f ? list.filter(e => e.includes(f)) : list;
@@ -2050,22 +3136,14 @@ class NEXORA {
         grid.className = "rp-grid";
         items.forEach(e => {
           const b = document.createElement("button");
-          b.className = "rp-emoji";
-          b.textContent = e;
-          b.addEventListener("click", () => {
-            pushRecent(RECENT_REACTIONS_KEY, e);
-            this.toggleReaction(msg.id, e);
-            this.closeContextMenu();
-          });
+          b.className = "rp-emoji"; b.textContent = e;
+          b.addEventListener("click", () => { pushRecent(RECENT_REACTIONS_KEY, e); this.toggleReaction(msg.id, e); this.closeContextMenu(); });
           grid.appendChild(b);
         });
         body.appendChild(grid);
       });
     };
-    wrap.innerHTML = `
-      <div class="rp-search"><input placeholder="Поиск реакции…"></div>
-      <div class="rp-recent"></div>
-      <div class="rp-body"></div>`;
+    wrap.innerHTML = `<div class="rp-search"><input placeholder="Поиск реакции…"></div><div class="rp-recent"></div><div class="rp-body"></div>`;
     if (recent.length) {
       const rc = wrap.querySelector(".rp-recent");
       rc.innerHTML = `<div class="rp-title">Недавние</div>`;
@@ -2074,35 +3152,21 @@ class NEXORA {
       recent.slice(0, 12).forEach(e => {
         const b = document.createElement("button");
         b.className = "rp-emoji"; b.textContent = e;
-        b.addEventListener("click", () => {
-          pushRecent(RECENT_REACTIONS_KEY, e);
-          this.toggleReaction(msg.id, e);
-          this.closeContextMenu();
-        });
+        b.addEventListener("click", () => { pushRecent(RECENT_REACTIONS_KEY, e); this.toggleReaction(msg.id, e); this.closeContextMenu(); });
         grid.appendChild(b);
       });
       rc.appendChild(grid);
     }
     renderBody();
     const inp = wrap.querySelector("input");
-    inp.addEventListener("input", () => {
-      wrap.querySelector(".rp-recent").innerHTML = "";
-      renderBody(inp.value);
-    });
+    inp.addEventListener("input", () => { wrap.querySelector(".rp-recent").innerHTML = ""; renderBody(inp.value); });
     document.body.appendChild(wrap);
     const r = event.target.getBoundingClientRect();
     wrap.style.left = Math.min(r.left, window.innerWidth - 340) + "px";
     wrap.style.top = Math.max(10, Math.min(r.top - 40, window.innerHeight - 400)) + "px";
-    setTimeout(() => {
-      document.addEventListener("click", (ev) => {
-        if (!wrap.contains(ev.target)) this.closeContextMenu();
-      }, { once: true });
-    }, 0);
+    setTimeout(() => { document.addEventListener("click", (ev) => { if (!wrap.contains(ev.target)) this.closeContextMenu(); }, { once: true }); }, 0);
   }
 
-  /* ============================================================
-     ПАНЕЛЬ ПРОГОЛОСОВАВШИХ
-     ============================================================ */
   showReactionVoters(messageId, emoji) {
     const uids = this.reactions[messageId]?.[emoji] || [];
     if (!uids.length) return;
@@ -2113,14 +3177,11 @@ class NEXORA {
         const list = document.createElement("div");
         list.className = "voters-list";
         uids.forEach(uid => {
-          const u = this.members.find(mm => mm.user_id === uid) ||
-                    (uid === this.user.id ? this.profile : null);
+          const u = this.members.find(mm => mm.user_id === uid) || (uid === this.user.id ? this.profile : null);
           const name = uid === this.user.id ? (this.profile?.username || "Ты") : (u?.username || "User");
           const row = document.createElement("div");
           row.className = "voter-row";
-          row.innerHTML = `
-            ${avatarHTML(u || { username: name }, "sm")}
-            <span class="voter-name">${escapeHtml(name)}</span>`;
+          row.innerHTML = `${avatarHTML(u || { username: name }, "sm")}<span class="voter-name">${escapeHtml(name)}</span>`;
           list.appendChild(row);
         });
         body.appendChild(list);
@@ -2128,21 +3189,15 @@ class NEXORA {
     });
   }
 
-  /* ============================================================
-     EMOJI / STICKER PICKER
-     ============================================================ */
+  /* PICKER */
   openPicker(initialTab = "emoji") {
     const existing = $("picker");
     if (existing) { existing.remove(); this._activePicker = null; return; }
     const picker = document.createElement("div");
     picker.id = "picker"; picker.className = "picker";
-    picker.innerHTML = `
-      <div class="picker-tabs"></div>
-      <div class="picker-search"><input placeholder="Поиск…"></div>
-      <div class="picker-body"></div>`;
+    picker.innerHTML = `<div class="picker-tabs"></div><div class="picker-search"><input placeholder="Поиск…"></div><div class="picker-body"></div>`;
     document.querySelector(".chat-view").appendChild(picker);
     this._activePicker = picker;
-
     const tabs = picker.querySelector(".picker-tabs");
     const searchWrap = picker.querySelector(".picker-search");
     const searchInp = searchWrap.querySelector("input");
@@ -2152,7 +3207,7 @@ class NEXORA {
       body.className = "picker-body";
       body.innerHTML = "";
       const f = filter.trim().toLowerCase();
-      let catsToShow = cat === "*" ? Object.keys(EMOJI_CATEGORIES) : [cat];
+      const catsToShow = cat === "*" ? Object.keys(EMOJI_CATEGORIES) : [cat];
       catsToShow.forEach(cName => {
         let items = EMOJI_CATEGORIES[cName] || [];
         if (f) items = items.filter(e => e.includes(f));
@@ -2165,39 +3220,26 @@ class NEXORA {
         grid.className = "rp-grid";
         items.forEach(e => {
           const b = document.createElement("button");
-          b.className = "rp-emoji";
-          b.textContent = e;
-          b.addEventListener("click", () => {
-            this.insertAtCursor($("composer"), e);
-            pushRecent(RECENT_EMOJI_KEY, e);
-          });
+          b.className = "rp-emoji"; b.textContent = e;
+          b.addEventListener("click", () => { this.insertAtCursor($("composer"), e); pushRecent(RECENT_EMOJI_KEY, e); });
           grid.appendChild(b);
         });
         body.appendChild(grid);
       });
-      if (!body.children.length) {
-        body.innerHTML = `<div class="empty-state">Ничего не найдено</div>`;
-      }
+      if (!body.children.length) body.innerHTML = `<div class="empty-state">Ничего не найдено</div>`;
     };
     const renderRecent = (filter = "") => {
       const recent = lsGet(RECENT_EMOJI_KEY, []);
       body.className = "picker-body";
       body.innerHTML = "";
       const items = filter ? recent.filter(e => e.includes(filter)) : recent;
-      if (!items.length) {
-        body.innerHTML = `<div class="empty-state">Пока ничего нет</div>`;
-        return;
-      }
+      if (!items.length) { body.innerHTML = `<div class="empty-state">Пока ничего нет</div>`; return; }
       const grid = document.createElement("div");
       grid.className = "rp-grid";
       items.forEach(e => {
         const b = document.createElement("button");
-        b.className = "rp-emoji";
-        b.textContent = e;
-        b.addEventListener("click", () => {
-          this.insertAtCursor($("composer"), e);
-          pushRecent(RECENT_EMOJI_KEY, e);
-        });
+        b.className = "rp-emoji"; b.textContent = e;
+        b.addEventListener("click", () => { this.insertAtCursor($("composer"), e); pushRecent(RECENT_EMOJI_KEY, e); });
         grid.appendChild(b);
       });
       body.appendChild(grid);
@@ -2214,8 +3256,7 @@ class NEXORA {
         body.appendChild(tt);
       });
       try {
-        const { data: custom } = await supabase.from("stickers")
-          .select("id, name, url").order("created_at", { ascending: false });
+        const { data: custom } = await supabase.from("stickers").select("id, name, url").order("created_at", { ascending: false });
         (custom || []).forEach(s => {
           const tt = document.createElement("div");
           tt.className = "picker-sticker";
@@ -2226,7 +3267,6 @@ class NEXORA {
         });
       } catch (_) {}
     };
-
     const addTab = (label, onClick) => {
       const b = document.createElement("button");
       b.className = "picker-tab"; b.textContent = label;
@@ -2239,7 +3279,6 @@ class NEXORA {
       tabs.appendChild(b);
       return b;
     };
-
     addTab("⏱", () => { searchWrap.style.display = ""; renderRecent(); });
     Object.keys(EMOJI_CATEGORIES).forEach((cat, idx) => {
       const tt = addTab(cat, () => { searchWrap.style.display = ""; renderEmojiCat(cat); });
@@ -2248,18 +3287,18 @@ class NEXORA {
     addTab("🎨 Стикеры", () => { searchWrap.style.display = "none"; renderStickers(); });
     addTab("🔍", () => { searchWrap.style.display = ""; renderEmojiCat("*"); });
 
-    renderEmojiCat(Object.keys(EMOJI_CATEGORIES)[0]);
-    const activeTab = [...tabs.children].find(c => c.classList.contains("active"));
-    if (activeTab) activeTab.classList.add("active");
-
+    if (initialTab === "stickers") {
+      const stickerTab = [...tabs.children].find(c => c.textContent.includes("Стикеры"));
+      if (stickerTab) stickerTab.click();
+    } else {
+      renderEmojiCat(Object.keys(EMOJI_CATEGORIES)[0]);
+    }
     searchInp.addEventListener("input", () => {
       const activeLabel = tabs.querySelector(".picker-tab.active")?.textContent || "";
       if (activeLabel === "⏱") renderRecent(searchInp.value);
       else if (activeLabel === "🎨 Стикеры") return;
       else renderEmojiCat("*", searchInp.value);
     });
-
-    /* Клик снаружи — закрыть */
     setTimeout(() => {
       document.addEventListener("click", (ev) => {
         const p = $("picker");
@@ -2278,34 +3317,24 @@ class NEXORA {
     const pos = start + text.length;
     input.selectionStart = input.selectionEnd = pos;
     input.focus();
-    /* autosize */
     input.style.height = "auto";
     input.style.height = Math.min(input.scrollHeight, 160) + "px";
   }
-
   async sendSticker(stickerId, stickerUrl) {
     if (!this.activeChat) return;
     try {
-      const payload = {
-        chat_id: this.activeChat.id, sender_id: this.user.id,
-        content: "", kind: "sticker", sticker_id: stickerId,
-        reply_to: this.pendingReplyTo?.id || null,
-      };
+      const payload = { chat_id: this.activeChat.id, sender_id: this.user.id, content: "", kind: "sticker", sticker_id: stickerId, reply_to: this.pendingReplyTo?.id || null };
       if (!stickerId.startsWith("sys-")) payload.attachment_url = stickerUrl;
       const { data, error } = await supabase.from("messages").insert(payload).select().single();
       if (error) throw error;
-      if (!this.messages.find(m => m.id === data.id)) {
-        this.messages.push(data); this.paintMessageWindow();
-      }
+      if (!this.messages.find(m => m.id === data.id)) { this.messages.push(data); this.paintMessageWindow(); }
       this.hideReplyPreview();
       this.scheduleRefreshChats();
       Sounds.send();
     } catch (e) { console.error(e); toast("Ошибка стикера", "error"); }
   }
 
-  /* ============================================================
-     CONTEXT ACTIONS
-     ============================================================ */
+  /* CONTEXT ACTIONS */
   closeContextMenu() { const m = $("ctx-menu"); if (m) m.remove(); }
   setReplyTo(msg) {
     this.pendingReplyTo = msg;
@@ -2314,12 +3343,7 @@ class NEXORA {
     const bar = $("reply-bar");
     if (bar) {
       bar.classList.remove("hidden");
-      bar.innerHTML = `
-        <div class="reply-bar-body">
-          <div class="reply-bar-name">↩ ${escapeHtml(name)}</div>
-          <div class="reply-bar-text">${escapeHtml((msg.content || "").slice(0, 90))}</div>
-        </div>
-        <button class="icon-btn" id="reply-cancel">✕</button>`;
+      bar.innerHTML = `<div class="reply-bar-body"><div class="reply-bar-name">↩ ${escapeHtml(name)}</div><div class="reply-bar-text">${escapeHtml((msg.content || "").slice(0, 90))}</div></div><button class="icon-btn" id="reply-cancel">✕</button>`;
       bar.querySelector("#reply-cancel").addEventListener("click", () => this.hideReplyPreview());
     }
     $("composer").focus();
@@ -2332,9 +3356,7 @@ class NEXORA {
   async togglePin(msg) {
     try {
       const next = !msg.pinned;
-      const { data, error } = await supabase.from("messages")
-        .update({ pinned: next, pinned_at: next ? new Date().toISOString() : null, pinned_by: next ? this.user.id : null })
-        .eq("id", msg.id).select().single();
+      const { data, error } = await supabase.from("messages").update({ pinned: next, pinned_at: next ? new Date().toISOString() : null, pinned_by: next ? this.user.id : null }).eq("id", msg.id).select().single();
       if (error) throw error;
       const i = this.messages.findIndex(m => m.id === msg.id);
       if (i >= 0) this.messages[i] = data;
@@ -2358,21 +3380,11 @@ class NEXORA {
           row.className = "settings-row"; row.style.cursor = "pointer";
           const label = c.is_notification ? "NEXORA" : c.type === "saved" ? "Избранное" : c.display_title;
           const desc = c.is_notification ? "уведомления" : c.type === "saved" ? "сохранённые сообщения" : c.type;
-          row.innerHTML = `<div class="settings-row-info">
-            <div class="settings-row-label">${escapeHtml(label)}</div>
-            <div class="settings-row-desc">${escapeHtml(desc)}</div>
-          </div><button class="btn btn-primary">→</button>`;
+          row.innerHTML = `<div class="settings-row-info"><div class="settings-row-label">${escapeHtml(label)}</div><div class="settings-row-desc">${escapeHtml(desc)}</div></div><button class="btn btn-primary">→</button>`;
           row.querySelector("button").addEventListener("click", async () => {
             try {
-              await supabase.from("messages").insert({
-                chat_id: c.id, sender_id: this.user.id,
-                content: msg.content || "", kind: msg.kind || "text",
-                attachment_url: msg.attachment_url, attachment_type: msg.attachment_type,
-                file_name: msg.file_name, file_size: msg.file_size,
-                sticker_id: msg.sticker_id,
-              });
-              toast("Переслано", "success"); Sounds.send();
-              this.closeModal();
+              await supabase.from("messages").insert({ chat_id: c.id, sender_id: this.user.id, content: msg.content || "", kind: msg.kind || "text", attachment_url: msg.attachment_url, attachment_type: msg.attachment_type, file_name: msg.file_name, file_size: msg.file_size, sticker_id: msg.sticker_id });
+              toast("Переслано", "success"); Sounds.send(); this.closeModal();
             } catch (e) { toast(e.message || "Ошибка", "error"); }
           });
           body.appendChild(row);
@@ -2384,16 +3396,12 @@ class NEXORA {
     const newText = prompt("Новый текст:", msg.content);
     if (newText === null || !newText.trim()) return;
     try {
-      const { data, error } = await supabase
-        .from("messages")
-        .update({ content: newText.trim(), edited_at: new Date().toISOString() })
-        .eq("id", msg.id).select().single();
+      const { data, error } = await supabase.from("messages").update({ content: newText.trim(), edited_at: new Date().toISOString() }).eq("id", msg.id).select().single();
       if (error) throw error;
       const i = this.messages.findIndex(m => m.id === msg.id);
       if (i >= 0) this.messages[i] = data;
       this.paintMessageWindow();
-      toast("Изменено", "success");
-      Sounds.click();
+      toast("Изменено", "success"); Sounds.click();
     } catch (e) { toast("Ошибка", "error"); }
   }
   async deleteMessageForMe(msg) {
@@ -2401,43 +3409,24 @@ class NEXORA {
     this.markHidden(msg.id);
     this.messages = this.messages.filter(m => m.id !== msg.id);
     this.paintMessageWindow();
-    toast("Удалено у тебя", "success");
-    Sounds.click();
+    toast("Удалено у тебя", "success"); Sounds.click();
   }
   async deleteMessageForEveryone(msg) {
     if (!confirm("Удалить сообщение у всех? Действие необратимо.")) return;
     try {
       const { error } = await supabase.rpc("delete_message_for_everyone", { p_message_id: msg.id });
       if (error) throw error;
-      /* realtime сам обновит, но на всякий случай локально */
       const i = this.messages.findIndex(m => m.id === msg.id);
-      if (i >= 0) {
-        this.messages[i].deleted_at = new Date().toISOString();
-        this.messages[i].deleted_by = this.user.id;
-        this.paintMessageWindow();
-      }
-      toast("Удалено у всех", "success");
-      Sounds.click();
+      if (i >= 0) { this.messages[i].deleted_at = new Date().toISOString(); this.messages[i].deleted_by = this.user.id; this.paintMessageWindow(); }
+      toast("Удалено у всех", "success"); Sounds.click();
     } catch (e) { toast(e.message || "Ошибка", "error"); }
   }
-  async deleteMessage(msg) {
-    /* legacy-обёртка: теперь у нас есть «у себя» и «у всех» */
-    return this.deleteMessageForMe(msg);
-  }
+  async deleteMessage(msg) { return this.deleteMessageForMe(msg); }
   async toggleReaction(messageId, emoji) {
     try {
-      const { data: existing } = await supabase
-        .from("reactions").select("message_id")
-        .eq("message_id", messageId).eq("user_id", this.user.id).eq("emoji", emoji)
-        .maybeSingle();
-      if (existing) {
-        await supabase.from("reactions").delete()
-          .eq("message_id", messageId).eq("user_id", this.user.id).eq("emoji", emoji);
-      } else {
-        await supabase.from("reactions").insert({
-          message_id: messageId, user_id: this.user.id, emoji,
-        });
-      }
+      const { data: existing } = await supabase.from("reactions").select("message_id").eq("message_id", messageId).eq("user_id", this.user.id).eq("emoji", emoji).maybeSingle();
+      if (existing) await supabase.from("reactions").delete().eq("message_id", messageId).eq("user_id", this.user.id).eq("emoji", emoji);
+      else await supabase.from("reactions").insert({ message_id: messageId, user_id: this.user.id, emoji });
       Sounds.click();
       await this.loadReactions();
       this.paintMessageWindow();
@@ -2445,37 +3434,27 @@ class NEXORA {
   }
   async saveToFavorites(msg) {
     try {
-      const { error } = await supabase.from("favorites").insert({
-        owner_id: this.user.id, message_id: msg.id, chat_id: this.activeChat.id,
-      });
+      const { error } = await supabase.from("favorites").insert({ owner_id: this.user.id, message_id: msg.id, chat_id: this.activeChat.id });
       if (error && error.code !== "23505") throw error;
-      toast("Сохранено в избранное", "success");
-      Sounds.success();
+      toast("Сохранено в избранное", "success"); Sounds.success();
     } catch (e) { toast("Ошибка", "error"); }
   }
   async copyMessageLink(msg) {
     try {
       const url = `${location.origin}${location.pathname}?chat=${this.activeChat.id}&msg=${msg.id}`;
       await navigator.clipboard.writeText(url);
-      toast("Ссылка на сообщение скопирована", "success");
-      Sounds.success();
+      toast("Ссылка на сообщение скопирована", "success"); Sounds.success();
     } catch (e) { toast("Не удалось скопировать", "error"); }
   }
   async openMessageFromLink(chatId, msgId) {
     await this.openChatById(chatId);
     setTimeout(() => {
       const el = document.querySelector(`[data-message-id="${msgId}"]`);
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
-        el.classList.add("msg-link-highlight");
-        setTimeout(() => el.classList.remove("msg-link-highlight"), 2500);
-      }
+      if (el) { el.scrollIntoView({ behavior: "smooth", block: "center" }); el.classList.add("msg-link-highlight"); setTimeout(() => el.classList.remove("msg-link-highlight"), 2500); }
     }, 400);
   }
 
-  /* ============================================================
-     SENDING
-     ============================================================ */
+  /* SENDING */
   async sendCurrent() {
     const input = $("composer");
     const text = input.value.trim();
@@ -2487,130 +3466,71 @@ class NEXORA {
     try {
       let payload;
       if (att) {
-        payload = {
-          chat_id: this.activeChat.id, sender_id: this.user.id,
-          content: text.slice(0, 4000), kind: att.kind,
-          attachment_url: att.url, attachment_type: att.kind,
-          file_name: att.name, file_size: att.size,
-          reply_to: reply?.id || null,
-        };
-        this.pendingAttachment = null;
-        this.hideAttachBar();
+        payload = { chat_id: this.activeChat.id, sender_id: this.user.id, content: text.slice(0, 4000), kind: att.kind, attachment_url: att.url, attachment_type: att.kind, file_name: att.name, file_size: att.size, reply_to: reply?.id || null };
+        this.pendingAttachment = null; this.hideAttachBar();
       } else {
-        payload = {
-          chat_id: this.activeChat.id, sender_id: this.user.id,
-          content: text, kind: "text", reply_to: reply?.id || null,
-        };
+        payload = { chat_id: this.activeChat.id, sender_id: this.user.id, content: text, kind: "text", reply_to: reply?.id || null };
       }
       const { data, error } = await supabase.from("messages").insert(payload).select().single();
       if (error) throw error;
-      if (!this.messages.find(m => m.id === data.id)) {
-        this.messages.push(data);
-        this.paintMessageWindow();
-      }
+      if (!this.messages.find(m => m.id === data.id)) { this.messages.push(data); this.paintMessageWindow(); }
       this.hideReplyPreview();
       this.scheduleRefreshChats();
       Sounds.send();
       this.maybeBotReply(data);
       setTimeout(() => this.checkStrangerBanner(), 200);
-    } catch (e) {
-      console.error(e);
-      toast("Не удалось отправить", "error");
-    }
+    } catch (e) { console.error(e); toast("Не удалось отправить", "error"); }
   }
 
-  /* ============================================================
-     POLL CREATOR
-     ============================================================ */
+  /* POLL CREATOR */
   openPollCreator() {
     if (!this.activeChat) return;
     this.openModal({
       title: t("createPoll"),
       body: (body) => {
         body.innerHTML = `
-          <div class="form-group">
-            <label>${t("question")}</label>
-            <input id="pl-question" maxlength="200" placeholder="О чём спросить?">
-          </div>
-          <div class="settings-section" style="margin-top:6px">
-            <h3>${t("options")}</h3>
-            <div id="pl-options"></div>
-            <button class="btn btn-ghost btn-block" id="pl-add" style="margin-top:8px">＋ ${t("addOption")}</button>
-          </div>
-          <div class="settings-section">
-            <h3>Параметры</h3>
-            <label style="display:flex;gap:10px;align-items:center;cursor:pointer;padding:6px 0">
-              <input type="checkbox" id="pl-multiple" style="width:auto">
-              <span>${t("multiple")}</span>
-            </label>
-            <label style="display:flex;gap:10px;align-items:center;cursor:pointer;padding:6px 0">
-              <input type="checkbox" id="pl-anon" style="width:auto" checked>
-              <span>${t("anonymous")}</span>
-            </label>
-            <label style="display:flex;gap:10px;align-items:center;cursor:pointer;padding:6px 0">
-              <input type="checkbox" id="pl-quiz" style="width:auto">
-              <span>${t("quiz")}</span>
-            </label>
-            <div id="pl-correct-wrap" style="display:none;margin-top:8px">
-              <label style="font-size:11px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:1px">
-                Правильный вариант
-              </label>
-              <select id="pl-correct" style="margin-top:6px"></select>
-            </div>
+          <div class="form-group"><label>${t("question")}</label><input id="pl-question" maxlength="200" placeholder="О чём спросить?"></div>
+          <div class="settings-section" style="margin-top:6px"><h3>${t("options")}</h3><div id="pl-options"></div><button class="btn btn-ghost btn-block" id="pl-add" style="margin-top:8px">＋ ${t("addOption")}</button></div>
+          <div class="settings-section"><h3>Параметры</h3>
+            <label style="display:flex;gap:10px;align-items:center;cursor:pointer;padding:6px 0"><input type="checkbox" id="pl-multiple" style="width:auto"><span>${t("multiple")}</span></label>
+            <label style="display:flex;gap:10px;align-items:center;cursor:pointer;padding:6px 0"><input type="checkbox" id="pl-anon" style="width:auto" checked><span>${t("anonymous")}</span></label>
+            <label style="display:flex;gap:10px;align-items:center;cursor:pointer;padding:6px 0"><input type="checkbox" id="pl-quiz" style="width:auto"><span>${t("quiz")}</span></label>
+            <div id="pl-correct-wrap" style="display:none;margin-top:8px"><label style="font-size:11px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:1px">Правильный вариант</label><select id="pl-correct" style="margin-top:6px"></select></div>
           </div>
           <div id="pl-error" class="form-error"></div>
-          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)">
-            <button class="btn btn-ghost" id="pl-cancel">${t("cancel")}</button>
-            <button class="btn btn-primary" id="pl-create">${t("createPoll")}</button>
-          </div>`;
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)"><button class="btn btn-ghost" id="pl-cancel">${t("cancel")}</button><button class="btn btn-primary" id="pl-create">${t("createPoll")}</button></div>`;
         const optsBox = body.querySelector("#pl-options");
         const correctSel = body.querySelector("#pl-correct");
         const correctWrap = body.querySelector("#pl-correct-wrap");
         const refreshCorrect = () => {
           const vals = [...optsBox.querySelectorAll("input")].map(i => i.value.trim()).filter(Boolean);
           correctSel.innerHTML = "";
-          vals.forEach((v, i) => {
-            const o = document.createElement("option");
-            o.value = String(i);
-            o.textContent = v;
-            correctSel.appendChild(o);
-          });
+          vals.forEach((v, i) => { const o = document.createElement("option"); o.value = String(i); o.textContent = v; correctSel.appendChild(o); });
         };
         const addOpt = (value = "") => {
           const row = document.createElement("div");
           row.style.cssText = "display:flex;gap:8px;align-items:center;margin-bottom:6px";
-          const inp = document.createElement("input");
-          inp.placeholder = "Вариант"; inp.maxLength = 100; inp.value = value;
+          const inp = document.createElement("input"); inp.placeholder = "Вариант"; inp.maxLength = 100; inp.value = value;
           inp.addEventListener("input", refreshCorrect);
-          const del = document.createElement("button");
-          del.className = "icon-btn"; del.textContent = "✕";
+          const del = document.createElement("button"); del.className = "icon-btn"; del.textContent = "✕";
           del.addEventListener("click", () => { row.remove(); refreshCorrect(); });
-          row.appendChild(inp); row.appendChild(del);
-          optsBox.appendChild(row); refreshCorrect();
+          row.appendChild(inp); row.appendChild(del); optsBox.appendChild(row); refreshCorrect();
         };
         addOpt(); addOpt();
         body.querySelector("#pl-add").addEventListener("click", () => {
-          const count = optsBox.querySelectorAll("input").length;
-          if (count >= 10) return toast("Максимум 10 вариантов", "warning");
+          if (optsBox.querySelectorAll("input").length >= 10) return toast("Максимум 10 вариантов", "warning");
           addOpt();
         });
         body.querySelector("#pl-quiz").addEventListener("change", (e) => {
           correctWrap.style.display = e.target.checked ? "block" : "none";
-          if (e.target.checked) {
-            const anon = body.querySelector("#pl-anon");
-            const multi = body.querySelector("#pl-multiple");
-            anon.checked = false; anon.disabled = true;
-            multi.checked = false; multi.disabled = true;
-          } else {
-            const anon = body.querySelector("#pl-anon");
-            const multi = body.querySelector("#pl-multiple");
-            anon.disabled = false; multi.disabled = false;
-          }
+          const anon = body.querySelector("#pl-anon");
+          const multi = body.querySelector("#pl-multiple");
+          if (e.target.checked) { anon.checked = false; anon.disabled = true; multi.checked = false; multi.disabled = true; }
+          else { anon.disabled = false; multi.disabled = false; }
         });
         body.querySelector("#pl-cancel").addEventListener("click", () => this.closeModal());
         body.querySelector("#pl-create").addEventListener("click", async () => {
-          const errEl = body.querySelector("#pl-error");
-          errEl.classList.remove("show");
+          const errEl = body.querySelector("#pl-error"); errEl.classList.remove("show");
           const question = body.querySelector("#pl-question").value.trim();
           const options = [...optsBox.querySelectorAll("input")].map(i => i.value.trim()).filter(Boolean);
           const isQuiz = body.querySelector("#pl-quiz").checked;
@@ -2619,49 +3539,30 @@ class NEXORA {
           const correctIndex = isQuiz ? parseInt(correctSel.value, 10) : null;
           if (!question) { errEl.textContent = "Введи вопрос"; errEl.classList.add("show"); return; }
           if (options.length < 2) { errEl.textContent = "Минимум 2 варианта"; errEl.classList.add("show"); return; }
-          if (isQuiz && (correctIndex == null || isNaN(correctIndex))) {
-            errEl.textContent = "Выбери правильный вариант"; errEl.classList.add("show"); return;
-          }
-          const btn = body.querySelector("#pl-create");
-          btn.disabled = true; btn.textContent = "Создаём…";
+          if (isQuiz && (correctIndex == null || isNaN(correctIndex))) { errEl.textContent = "Выбери правильный вариант"; errEl.classList.add("show"); return; }
+          const btn = body.querySelector("#pl-create"); btn.disabled = true; btn.textContent = "Создаём…";
           try {
             const { error } = await supabase.rpc("create_poll", {
-              p_chat_id: this.activeChat.id,
-              p_question: question,
-              p_options: options,
-              p_is_quiz: isQuiz,
-              p_correct_index: correctIndex,
-              p_is_anonymous: isAnon,
-              p_allows_multiple: allowsMultiple,
+              p_chat_id: this.activeChat.id, p_question: question, p_options: options,
+              p_is_quiz: isQuiz, p_correct_index: correctIndex, p_is_anonymous: isAnon, p_allows_multiple: allowsMultiple,
             });
             if (error) throw error;
-            this.closeModal();
-            Sounds.success();
-            toast("Опрос создан", "success");
+            this.closeModal(); Sounds.success(); toast("Опрос создан", "success");
             try {
-              const { data: msgs } = await supabase
-                .from("messages")
+              const { data: msgs } = await supabase.from("messages")
                 .select("id, chat_id, sender_id, content, kind, sticker_id, attachment_url, attachment_type, file_name, file_size, edited_at, created_at, reply_to, pinned, pinned_at, channel_post_id, expires_at, deleted_at, deleted_by")
-                .eq("chat_id", this.activeChat.id)
-                .order("created_at", { ascending: true })
-                .limit(500);
+                .eq("chat_id", this.activeChat.id).order("created_at", { ascending: true }).limit(500);
               if (msgs) this.messages = msgs.filter(m => !this.hiddenMsgs.has(m.id));
             } catch (_) {}
             await this.loadPolls();
             this.paintMessageWindow();
-          } catch (e) {
-            errEl.textContent = e.message || "Не удалось создать опрос";
-            errEl.classList.add("show");
-            btn.disabled = false; btn.textContent = t("createPoll");
-          }
+          } catch (e) { errEl.textContent = e.message || "Не удалось создать опрос"; errEl.classList.add("show"); btn.disabled = false; btn.textContent = t("createPoll"); }
         });
       },
     });
   }
 
-  /* ============================================================
-     BOTS
-     ============================================================ */
+  /* BOTS */
   maybeBotReply(msg) {
     if (!this.activeChat?.peer?.is_bot) return;
     if (msg.sender_id !== this.user.id) return;
@@ -2669,14 +3570,8 @@ class NEXORA {
     if (!text.startsWith("/")) return;
     const [cmd, ...args] = text.split(/\s+/);
     const key = cmd.toLowerCase();
-    if (key === "/newbot") {
-      this.deliverBotReply("Открываю мастер создания бота…");
-      setTimeout(() => this.openBotFather(), 300); return;
-    }
-    if (key === "/mybots") {
-      this.deliverBotReply("Открываю список ботов…");
-      setTimeout(() => this.openMyBots(), 300); return;
-    }
+    if (key === "/newbot") { this.deliverBotReply("Открываю мастер создания бота…"); setTimeout(() => this.openBotFather(), 300); return; }
+    if (key === "/mybots") { this.deliverBotReply("Открываю список ботов…"); setTimeout(() => this.openMyBots(), 300); return; }
     const builtin = BOT_COMMANDS[key];
     if (builtin) {
       const reply = typeof builtin === "function" ? builtin(args) : builtin;
@@ -2689,80 +3584,45 @@ class NEXORA {
   }
   async deliverBotReply(text) {
     if (!this.activeChat) return;
-    try {
-      const { error } = await supabase.rpc("bot_reply", {
-        p_chat_id: this.activeChat.id, p_content: text,
-      });
-      if (error) throw error;
-    } catch (e) { console.error("bot_reply:", e); }
+    try { const { error } = await supabase.rpc("bot_reply", { p_chat_id: this.activeChat.id, p_content: text }); if (error) throw error; } catch (e) { console.error("bot_reply:", e); }
   }
   openBotFather() {
     this.openModal({
       title: "Создание бота",
       body: (body) => {
         body.innerHTML = `
-          <div class="form-group">
-            <label>Username (латиница, 3–24)</label>
-            <input id="bf-username" maxlength="24" placeholder="MyCoolBot">
-          </div>
-          <div class="form-group">
-            <label>Отображаемое имя</label>
-            <input id="bf-name" maxlength="40" placeholder="My Cool Bot">
-          </div>
-          <div class="form-group">
-            <label>Описание</label>
-            <input id="bf-desc" maxlength="200" placeholder="Что делает бот">
-          </div>
-          <div class="form-group">
-            <label>Команды (по одной на строку)</label>
-            <textarea id="bf-commands" rows="5" placeholder="/start Привет!
-/help Помощь"></textarea>
-          </div>
+          <div class="form-group"><label>Username (латиница, 3–24)</label><input id="bf-username" maxlength="24" placeholder="MyCoolBot"></div>
+          <div class="form-group"><label>Отображаемое имя</label><input id="bf-name" maxlength="40" placeholder="My Cool Bot"></div>
+          <div class="form-group"><label>Описание</label><input id="bf-desc" maxlength="200" placeholder="Что делает бот"></div>
+          <div class="form-group"><label>Команды (по одной на строку)</label><textarea id="bf-commands" rows="5" placeholder="/start Привет!\n/help Помощь"></textarea></div>
           <div id="bf-error" class="form-error"></div>
-          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)">
-            <button class="btn btn-ghost" id="bf-cancel">${t("cancel")}</button>
-            <button class="btn btn-primary" id="bf-create">Создать бота</button>
-          </div>`;
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)"><button class="btn btn-ghost" id="bf-cancel">${t("cancel")}</button><button class="btn btn-primary" id="bf-create">Создать бота</button></div>`;
         body.querySelector("#bf-cancel").addEventListener("click", () => this.closeModal());
         body.querySelector("#bf-create").addEventListener("click", async () => {
           const username = body.querySelector("#bf-username").value.trim();
           const name = body.querySelector("#bf-name").value.trim();
           const desc = body.querySelector("#bf-desc").value.trim();
           const commandsRaw = body.querySelector("#bf-commands").value;
-          const errEl = body.querySelector("#bf-error");
-          errEl.classList.remove("show");
-          if (!/^[a-zA-Z0-9_]{3,24}$/.test(username)) {
-            errEl.textContent = "Username: 3–24, латиница/цифры/_";
-            errEl.classList.add("show"); return;
-          }
+          const errEl = body.querySelector("#bf-error"); errEl.classList.remove("show");
+          if (!/^[a-zA-Z0-9_]{3,24}$/.test(username)) { errEl.textContent = "Username: 3–24, латиница/цифры/_"; errEl.classList.add("show"); return; }
           const commands = commandsRaw.split("\n").map(l => l.trim()).filter(Boolean).map(line => {
             const m = line.match(/^(\S+)\s+(.*)$/);
             if (m) return { cmd: m[1], reply: m[2] };
             return { cmd: line, reply: "(нет ответа)" };
           });
           try {
-            const { data, error } = await supabase.rpc("create_custom_bot", {
-              p_username: username, p_display_name: name || username,
-              p_description: desc, p_commands: commands,
-            });
+            const { data, error } = await supabase.rpc("create_custom_bot", { p_username: username, p_display_name: name || username, p_description: desc, p_commands: commands });
             if (error) throw error;
-            toast("Бот создан", "success");
-            Sounds.success();
-            this.closeModal();
+            toast("Бот создан", "success"); Sounds.success(); this.closeModal();
             setTimeout(() => this.openBotChatById(data), 300);
-          } catch (e) {
-            errEl.textContent = e.message || "Ошибка";
-            errEl.classList.add("show");
-          }
+          } catch (e) { errEl.textContent = e.message || "Ошибка"; errEl.classList.add("show"); }
         });
       },
     });
   }
   async openMyBots() {
     try {
-      const { data } = await supabase.from("custom_bots")
-        .select("bot_user_id, username, display_name, description, commands, created_at")
-        .eq("owner_id", this.user.id).order("created_at", { ascending: false });
+      const { data } = await supabase.from("custom_bots").select("bot_user_id, username, display_name, description, commands, created_at").eq("owner_id", this.user.id).order("created_at", { ascending: false });
       this.openModal({
         title: "Мои боты",
         body: (body) => {
@@ -2770,15 +3630,11 @@ class NEXORA {
           data.forEach(b => {
             const row = document.createElement("div");
             row.className = "settings-row";
-            row.innerHTML = `<div class="settings-row-info">
-              <div class="settings-row-label">${escapeHtml(b.display_name)} <span class="bot-badge">[BOT]</span></div>
-              <div class="settings-row-desc">@${escapeHtml(b.username)} · ${(b.commands || []).length} команд</div>
-            </div>`;
+            row.innerHTML = `<div class="settings-row-info"><div class="settings-row-label">${escapeHtml(b.display_name)} <span class="bot-badge">[BOT]</span></div><div class="settings-row-desc">@${escapeHtml(b.username)} · ${(b.commands || []).length} команд</div></div>`;
             const open = document.createElement("button");
             open.className = "btn btn-ghost"; open.textContent = "Открыть";
             open.addEventListener("click", () => { this.closeModal(); this.openBotChatById(b.bot_user_id); });
-            row.appendChild(open);
-            body.appendChild(row);
+            row.appendChild(open); body.appendChild(row);
           });
         },
       });
@@ -2794,9 +3650,7 @@ class NEXORA {
     } catch (e) { toast("Не удалось открыть чат с ботом", "error"); }
   }
 
-  /* ============================================================
-     ATTACHMENTS
-     ============================================================ */
+  /* ATTACHMENTS */
   async pickAttachment() {
     if (!this.activeChat) return;
     const input = $("file-attach");
@@ -2808,22 +3662,17 @@ class NEXORA {
         toast("Загрузка…", "info");
         const safeName = file.name.replace(/[^\w.\-]+/g, "_").slice(0, 80);
         const path = `${this.user.id}/${this.activeChat.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}`;
-        const { error: upErr } = await supabase.storage
-          .from(ATTACH_BUCKET)
-          .upload(path, file, { contentType: file.type || "application/octet-stream", upsert: false });
+        const { error: upErr } = await supabase.storage.from(ATTACH_BUCKET).upload(path, file, { contentType: file.type || "application/octet-stream", upsert: false });
         if (upErr) throw upErr;
         const { data: pub } = supabase.storage.from(ATTACH_BUCKET).getPublicUrl(path);
-        const kind = file.type.startsWith("image/") ? "image"
-                  : file.type.startsWith("video/") ? "video"
-                  : file.type.startsWith("audio/") ? "file" : "file";
+        let kind = "file";
+        if (file.type.startsWith("image/")) kind = "image";
+        else if (file.type.startsWith("video/")) kind = "video";
         this.pendingAttachment = { url: pub.publicUrl, kind, name: file.name, size: file.size };
         $("attach-label").textContent = `📎 ${file.name} (${humanSize(file.size)}) — Enter для отправки`;
         $("attach-bar").classList.remove("hidden");
-        toast("Готово", "success");
-        Sounds.click();
-      } catch (e) {
-        console.error(e); toast("Не удалось загрузить", "error");
-      }
+        toast("Готово", "success"); Sounds.click();
+      } catch (e) { console.error(e); toast("Не удалось загрузить", "error"); }
     };
     input.click();
   }
@@ -2833,16 +3682,10 @@ class NEXORA {
     $("attach-label").textContent = "";
   }
 
-  /* ============================================================
-     VOICE RECORDING
-     ============================================================ */
+  /* VOICE */
   async toggleVoiceRecording() {
-    if (this._recorder && this._recorder.state === "recording") {
-      return this.stopVoiceRecording();
-    }
-    if (!navigator.mediaDevices || !window.MediaRecorder) {
-      return toast("Запись голоса не поддерживается", "error");
-    }
+    if (this._recorder && this._recorder.state === "recording") return this.stopVoiceRecording();
+    if (!navigator.mediaDevices || !window.MediaRecorder) return toast("Запись голоса не поддерживается", "error");
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       this._recorder = new MediaRecorder(stream);
@@ -2859,13 +3702,44 @@ class NEXORA {
         const ss = String(sec % 60).padStart(2, "0");
         const b2 = $("voice-bar");
         if (b2) b2.querySelector(".voice-time").textContent = `${mm}:${ss}`;
-      }, 500);
+      }, 250);
+      try {
+        this._voiceAC = new (window.AudioContext || window.webkitAudioContext)();
+        const src = this._voiceAC.createMediaStreamSource(stream);
+        const an = this._voiceAC.createAnalyser();
+        an.fftSize = 256;
+        src.connect(an);
+        this._voiceAnalyser = an;
+        const data = new Uint8Array(an.frequencyBinCount);
+        const wf = $("voice-wave");
+        if (wf) {
+          wf.innerHTML = "";
+          for (let i = 0; i < 32; i++) { const s = document.createElement("span"); wf.appendChild(s); }
+        }
+        const paint = () => {
+          if (!this._voiceAnalyser) return;
+          this._voiceAnalyser.getByteFrequencyData(data);
+          let sum = 0;
+          for (let i = 0; i < data.length; i++) sum += data[i];
+          const avg = sum / data.length / 255;
+          if (wf) {
+            const bars = wf.children;
+            for (let i = bars.length - 1; i > 0; i--) bars[i].style.height = bars[i - 1].style.height;
+            bars[0].style.height = Math.max(4, Math.round(avg * 100)) + "%";
+          }
+          this._voiceRAF = requestAnimationFrame(paint);
+        };
+        paint();
+      } catch (_) {}
     } catch (e) { toast("Нет доступа к микрофону", "error"); }
   }
   stopVoiceRecording() {
     if (!this._recorder) return;
     try { this._recorder.stop(); } catch (_) {}
     if (this._voiceTimer) { clearInterval(this._voiceTimer); this._voiceTimer = null; }
+    if (this._voiceRAF) { cancelAnimationFrame(this._voiceRAF); this._voiceRAF = null; }
+    if (this._voiceAC) { try { this._voiceAC.close(); } catch (_) {} this._voiceAC = null; }
+    this._voiceAnalyser = null;
     const bar = $("voice-bar");
     if (bar) bar.classList.add("hidden");
   }
@@ -2877,39 +3751,24 @@ class NEXORA {
     const buffer = await blob.arrayBuffer();
     try {
       const path = `${this.user.id}/${this.activeChat.id}/${Date.now()}-voice.webm`;
-      const { error: upErr } = await supabase.storage
-        .from(ATTACH_BUCKET)
-        .upload(path, buffer, { contentType: "audio/webm", upsert: false });
+      const { error: upErr } = await supabase.storage.from(ATTACH_BUCKET).upload(path, buffer, { contentType: "audio/webm", upsert: false });
       if (upErr) throw upErr;
       const { data: pub } = supabase.storage.from(ATTACH_BUCKET).getPublicUrl(path);
-      const payload = {
-        chat_id: this.activeChat.id, sender_id: this.user.id,
-        content: "[голосовое]", kind: "voice",
-        attachment_url: pub.publicUrl, attachment_type: "voice",
-        file_name: "voice.webm", file_size: blob.size,
-      };
+      const payload = { chat_id: this.activeChat.id, sender_id: this.user.id, content: "[голосовое]", kind: "voice", attachment_url: pub.publicUrl, attachment_type: "voice", file_name: "voice.webm", file_size: blob.size };
       const { data, error } = await supabase.from("messages").insert(payload).select().single();
       if (error) throw error;
-      if (!this.messages.find(m => m.id === data.id)) {
-        this.messages.push(data);
-        this.paintMessageWindow();
-      }
+      if (!this.messages.find(m => m.id === data.id)) { this.messages.push(data); this.paintMessageWindow(); }
       Sounds.send();
       toast("Голосовое отправлено", "success");
     } catch (e) { toast("Ошибка голосового: " + (e.message || ""), "error"); }
   }
 
-  /* ============================================================
-     REALTIME — АКТИВНЫЙ ЧАТ
-     ============================================================ */
+  /* REALTIME — CHAT */
   subscribeChat(chatId) {
     this.realtimeChannel = supabase.channel("chat:" + chatId)
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `chat_id=eq.${chatId}` },
-        (p) => this.onRealtimeInsert(p.new))
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages", filter: `chat_id=eq.${chatId}` },
-        (p) => this.onRealtimeUpdate(p.new))
-      .on("postgres_changes", { event: "DELETE", schema: "public", table: "messages", filter: `chat_id=eq.${chatId}` },
-        (p) => this.onRealtimeDelete(p.old))
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `chat_id=eq.${chatId}` }, (p) => this.onRealtimeInsert(p.new))
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages", filter: `chat_id=eq.${chatId}` }, (p) => this.onRealtimeUpdate(p.new))
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "messages", filter: `chat_id=eq.${chatId}` }, (p) => this.onRealtimeDelete(p.old))
       .subscribe();
   }
   subscribeTyping(chatId) {
@@ -2949,10 +3808,7 @@ class NEXORA {
   broadcastTyping() {
     if (!this.typingChannel || !this.activeChat) return;
     if (this.typingSelfTimeout) return;
-    this.typingChannel.send({
-      type: "broadcast", event: "typing",
-      payload: { user_id: this.user.id, username: this.profile?.username || "User" },
-    });
+    this.typingChannel.send({ type: "broadcast", event: "typing", payload: { user_id: this.user.id, username: this.profile?.username || "User" } });
     this.typingSelfTimeout = setTimeout(() => { this.typingSelfTimeout = null; }, 2000);
   }
   updateHeaderTyping() {
@@ -2960,10 +3816,8 @@ class NEXORA {
     const tt = this.typingUsers[chat.id];
     const typers = tt ? Object.values(tt).filter(x => Date.now() - x.ts < TYPING_TIMEOUT_MS) : [];
     const sub = $("chat-peer-sub");
-    if (typers.length) {
-      sub.textContent = typers.map(x => x.name).join(", ") + " печатает…";
-      sub.classList.add("typing");
-    } else {
+    if (typers.length) { sub.textContent = typers.map(x => x.name).join(", ") + " печатает…"; sub.classList.add("typing"); }
+    else {
       const peer = chat.peer;
       if (chat.is_notification) sub.textContent = "Уведомления о входах в аккаунт";
       else if (chat.type === "channel") sub.textContent = `${chat.is_public ? "публичный" : "приватный"} канал · ${chat.members_count || 0} подписчиков`;
@@ -2981,13 +3835,10 @@ class NEXORA {
     this._pollsReloadTimer = null;
   }
 
-  /* ============================================================
-     REALTIME — ГЛОБАЛЬНЫЕ ПОДПИСКИ
-     ============================================================ */
+  /* REALTIME — GLOBAL */
   subscribeProfiles() {
     supabase.channel("profiles-watch")
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles" },
-        (p) => this.onProfileUpdate(p.new))
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "profiles" }, (p) => this.onProfileUpdate(p.new))
       .subscribe();
   }
   subscribeGlobalMessages() {
@@ -3002,14 +3853,9 @@ class NEXORA {
         this.notify(title, m.content || "Новое сообщение");
         Sounds.message();
       })
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages" }, () => {
-        this.scheduleRefreshChats(500);
-      })
-      .on("postgres_changes", { event: "DELETE", schema: "public", table: "messages" }, () => {
-        this.scheduleRefreshChats(500);
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "chat_reads" },
-        () => this.loadReadsByOther())
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages" }, () => this.scheduleRefreshChats(500))
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "messages" }, () => this.scheduleRefreshChats(500))
+      .on("postgres_changes", { event: "*", schema: "public", table: "chat_reads" }, () => this.loadReadsByOther())
       .subscribe();
   }
   subscribeGlobalChatMembers() {
@@ -3017,24 +3863,16 @@ class NEXORA {
     this._chMembersChannel = supabase.channel("global-chat-members")
       .on("postgres_changes", { event: "*", schema: "public", table: "chat_members" }, (p) => {
         this.scheduleRefreshChats(400);
-        if (this.activeChat && p.new && p.new.chat_id === this.activeChat.id) {
-          this.scheduleReloadMembers(300);
-        }
-        if (this.activeChat && p.old && p.old.chat_id === this.activeChat.id) {
-          this.scheduleReloadMembers(300);
-        }
+        if (this.activeChat && p.new && p.new.chat_id === this.activeChat.id) this.scheduleReloadMembers(300);
+        if (this.activeChat && p.old && p.old.chat_id === this.activeChat.id) this.scheduleReloadMembers(300);
       })
       .subscribe();
   }
   subscribeGlobalChats() {
     if (this._chChatsChannel) supabase.removeChannel(this._chChatsChannel);
     this._chChatsChannel = supabase.channel("global-chats")
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "chats" }, () => {
-        this.scheduleRefreshChats(400);
-      })
-      .on("postgres_changes", { event: "INSERT", schema: "public", table: "chats" }, () => {
-        this.scheduleRefreshChats(400);
-      })
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "chats" }, () => this.scheduleRefreshChats(400))
+      .on("postgres_changes", { event: "INSERT", schema: "public", table: "chats" }, () => this.scheduleRefreshChats(400))
       .subscribe();
   }
   subscribeGlobalReactions() {
@@ -3046,9 +3884,7 @@ class NEXORA {
         if (!this.messages.find(m => m.id === r.message_id)) return;
         if (!this.reactions[r.message_id]) this.reactions[r.message_id] = {};
         if (!this.reactions[r.message_id][r.emoji]) this.reactions[r.message_id][r.emoji] = [];
-        if (!this.reactions[r.message_id][r.emoji].includes(r.user_id)) {
-          this.reactions[r.message_id][r.emoji].push(r.user_id);
-        }
+        if (!this.reactions[r.message_id][r.emoji].includes(r.user_id)) this.reactions[r.message_id][r.emoji].push(r.user_id);
         this.paintMessageWindow();
       })
       .on("postgres_changes", { event: "DELETE", schema: "public", table: "reactions" }, (p) => {
@@ -3056,11 +3892,7 @@ class NEXORA {
         if (!r) return;
         if (!this.messages.find(m => m.id === r.message_id)) return;
         const bucket = this.reactions[r.message_id]?.[r.emoji];
-        if (bucket) {
-          const idx = bucket.indexOf(r.user_id);
-          if (idx >= 0) bucket.splice(idx, 1);
-          if (!bucket.length) delete this.reactions[r.message_id][r.emoji];
-        }
+        if (bucket) { const idx = bucket.indexOf(r.user_id); if (idx >= 0) bucket.splice(idx, 1); if (!bucket.length) delete this.reactions[r.message_id][r.emoji]; }
         this.paintMessageWindow();
       })
       .subscribe();
@@ -3096,18 +3928,13 @@ class NEXORA {
     if (!this.activeChat || m.chat_id !== this.activeChat.id) return;
     const i = this.messages.findIndex(x => x.id === m.id);
     if (i >= 0) {
-      /* soft delete в реальном времени: анимация + перерисовка */
       const wasDeleted = !!this.messages[i].deleted_at;
       this.messages[i] = m;
       if (m.deleted_at && !wasDeleted) {
         const el = document.querySelector(`[data-message-id="${m.id}"]`);
         if (el) el.classList.add("msg-removing");
-        setTimeout(() => {
-          this.paintMessageWindow();
-        }, 220);
-      } else {
-        this.paintMessageWindow();
-      }
+        setTimeout(() => this.paintMessageWindow(), 220);
+      } else this.paintMessageWindow();
     }
   }
   onRealtimeDelete(m) {
@@ -3126,8 +3953,7 @@ class NEXORA {
                           this.activeChat.type === "saved" ? `<span class="list-item-badge-icon">${ICONS.star}</span>` : "";
         const botTag = this.activePeer.is_bot ? ' <span class="bot-badge">[BOT]</span>' : "";
         const badgeEmoji = this.activePeer.badge_emoji ? `<span style="margin-left:6px">${escapeHtml(this.activePeer.badge_emoji)}</span>` : "";
-        $("chat-peer-name").innerHTML = `${badgeHTML}${escapeHtml(this.activeChat.display_title || p.username)}${badgeEmoji}${botTag}
-          <span class="online-dot${this.isPeerOnline(this.activeChat) ? " online" : ""}"></span>`;
+        $("chat-peer-name").innerHTML = `${badgeHTML}${escapeHtml(this.activeChat.display_title || p.username)}${badgeEmoji}${botTag}<span class="online-dot${this.isPeerOnline(this.activeChat) ? " online" : ""}"></span>`;
       }
     }
     const c = this.contacts.find(c => c.id === p.id);
@@ -3141,13 +3967,9 @@ class NEXORA {
     this.pollTimer = setInterval(async () => {
       if (!this.activeChat || this.activeChat.id !== chatId) return;
       try {
-        const { data } = await supabase.from("messages")
-          .select("*").eq("chat_id", chatId).gt("created_at", lastIso)
-          .order("created_at", { ascending: true });
+        const { data } = await supabase.from("messages").select("*").eq("chat_id", chatId).gt("created_at", lastIso).order("created_at", { ascending: true });
         if (data && data.length) {
-          data.forEach(m => {
-            if (!this.messages.find(x => x.id === m.id) && !this.hiddenMsgs.has(m.id)) this.messages.push(m);
-          });
+          data.forEach(m => { if (!this.messages.find(x => x.id === m.id) && !this.hiddenMsgs.has(m.id)) this.messages.push(m); });
           lastIso = data[data.length - 1].created_at;
           this.paintMessageWindow();
         }
@@ -3156,45 +3978,18 @@ class NEXORA {
   }
   stopPolling() { if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = null; } }
 
-  /* ============================================================
-     CHANNEL / GROUP SETTINGS
-     ============================================================ */
+  /* CHANNEL / GROUP SETTINGS */
   openChannelSettings(chat) {
     this.openModal({
       title: "Настройки канала",
       body: (body) => {
         const isPublic = !!chat.is_public;
         body.innerHTML = `
-          <div class="settings-section">
-            <h3>${t("name")}</h3>
-            <input id="cs-title" maxlength="80" value="${escapeHtml(chat.title || "")}">
-            <textarea id="cs-desc" rows="2" maxlength="200" placeholder="${t("description")}" style="margin-top:8px">${escapeHtml(chat.description || "")}</textarea>
-          </div>
-          <div class="settings-section">
-            <h3>Тип канала</h3>
-            <div id="cs-type" style="display:flex;gap:8px"></div>
-            <div id="cs-username-wrap" style="margin-top:12px; display:${isPublic ? "block" : "none"}">
-              <label style="font-size:11px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:1px">${t("username")}</label>
-              <div class="input-prefix" style="margin-top:6px">
-                <span class="prefix">@</span>
-                <input id="cs-username" maxlength="32" value="${escapeHtml(chat.username || "")}" placeholder="my_channel">
-              </div>
-              <small style="display:block;margin-top:6px;color:var(--text-3);font-size:11px">5–32 символа, латиница, цифры, _. Пользователи смогут найти канал по @username.</small>
-            </div>
-          </div>
-          <div class="settings-section">
-            <h3>Ссылка-приглашение</h3>
-            <div id="cs-invite-info" style="color:var(--text-2);font-size:13px"></div>
-            <div class="share-row" id="cs-share-row" style="display:none">
-              <span class="share-link" id="cs-share-link"></span>
-              <button class="btn btn-ghost" id="cs-copy">Копировать</button>
-            </div>
-          </div>
+          <div class="settings-section"><h3>${t("name")}</h3><input id="cs-title" maxlength="80" value="${escapeHtml(chat.title || "")}"><textarea id="cs-desc" rows="2" maxlength="200" placeholder="${t("description")}" style="margin-top:8px">${escapeHtml(chat.description || "")}</textarea></div>
+          <div class="settings-section"><h3>Тип канала</h3><div id="cs-type" style="display:flex;gap:8px"></div><div id="cs-username-wrap" style="margin-top:12px; display:${isPublic ? "block" : "none"}"><label style="font-size:11px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:1px">${t("username")}</label><div class="input-prefix" style="margin-top:6px"><span class="prefix">@</span><input id="cs-username" maxlength="32" value="${escapeHtml(chat.username || "")}" placeholder="my_channel"></div></div></div>
+          <div class="settings-section"><h3>Ссылка-приглашение</h3><div id="cs-invite-info" style="color:var(--text-2);font-size:13px"></div><div class="share-row" id="cs-share-row" style="display:none"><span class="share-link" id="cs-share-link"></span><button class="btn btn-ghost" id="cs-copy">Копировать</button></div></div>
           <div id="cs-error" class="form-error"></div>
-          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)">
-            <button class="btn btn-ghost" id="cs-cancel">${t("cancel")}</button>
-            <button class="btn btn-primary" id="cs-save">${t("save")}</button>
-          </div>`;
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)"><button class="btn btn-ghost" id="cs-cancel">${t("cancel")}</button><button class="btn btn-primary" id="cs-save">${t("save")}</button></div>`;
         let picked = isPublic;
         const typeBox = body.querySelector("#cs-type");
         const unameWrap = body.querySelector("#cs-username-wrap");
@@ -3216,45 +4011,27 @@ class NEXORA {
           typeBox.appendChild(b);
         });
         function refreshInvite() {
-          if (picked) {
-            inviteInfo.textContent = "Публичный канал — ссылка формируется по @username.";
-            shareRow.style.display = "none";
-          } else {
+          if (picked) { inviteInfo.textContent = "Публичный канал — ссылка формируется по @username."; shareRow.style.display = "none"; }
+          else {
             inviteInfo.textContent = "Приватный канал — присоединиться можно только по ссылке.";
             shareRow.style.display = "flex";
-            shareLink.textContent = chat.invite_token
-              ? `${location.origin}${location.pathname}?c=${chat.invite_token}`
-              : "Ссылка появится после первого сохранения";
+            shareLink.textContent = chat.invite_token ? `${location.origin}${location.pathname}?c=${chat.invite_token}` : "Ссылка появится после первого сохранения";
           }
         }
         refreshInvite();
-        body.querySelector("#cs-copy").addEventListener("click", () => {
-          navigator.clipboard.writeText(shareLink.textContent);
-          toast("Ссылка скопирована", "success");
-        });
+        body.querySelector("#cs-copy").addEventListener("click", () => { navigator.clipboard.writeText(shareLink.textContent); toast("Ссылка скопирована", "success"); });
         body.querySelector("#cs-cancel").addEventListener("click", () => this.closeModal());
         body.querySelector("#cs-save").addEventListener("click", async () => {
-          const errEl = body.querySelector("#cs-error");
-          errEl.classList.remove("show");
+          const errEl = body.querySelector("#cs-error"); errEl.classList.remove("show");
           const title = body.querySelector("#cs-title").value.trim();
           const desc = body.querySelector("#cs-desc").value.trim();
           const uname = body.querySelector("#cs-username").value.trim().toLowerCase();
           if (!title) { errEl.textContent = "Введите название"; errEl.classList.add("show"); return; }
-          if (picked && !/^[a-z][a-z0-9_]{4,31}$/.test(uname)) {
-            errEl.textContent = "Username: 5–32, начинается с буквы, a-z, 0-9, _";
-            errEl.classList.add("show"); return;
-          }
+          if (picked && !/^[a-z][a-z0-9_]{4,31}$/.test(uname)) { errEl.textContent = "Username: 5–32, начинается с буквы"; errEl.classList.add("show"); return; }
           try {
-            const { error } = await supabase.rpc("update_channel_settings", {
-              p_chat_id: chat.id, p_is_public: picked,
-              p_username: picked ? uname : null,
-              p_title: title, p_description: desc,
-            });
+            const { error } = await supabase.rpc("update_channel_settings", { p_chat_id: chat.id, p_is_public: picked, p_username: picked ? uname : null, p_title: title, p_description: desc });
             if (error) throw error;
-            toast("Настройки сохранены", "success");
-            Sounds.success();
-            this.closeModal();
-            await this.refreshChats();
+            toast("Настройки сохранены", "success"); Sounds.success(); this.closeModal(); await this.refreshChats();
           } catch (e) { errEl.textContent = e.message || "Ошибка"; errEl.classList.add("show"); }
         });
       },
@@ -3266,36 +4043,11 @@ class NEXORA {
       body: (body) => {
         const isPublic = !!chat.is_public;
         body.innerHTML = `
-          <div class="settings-section">
-            <h3>${t("name")}</h3>
-            <input id="gs-title" maxlength="80" value="${escapeHtml(chat.title || "")}">
-            <textarea id="gs-desc" rows="2" maxlength="200" placeholder="${t("description")}" style="margin-top:8px">${escapeHtml(chat.description || "")}</textarea>
-          </div>
-          <div class="settings-section">
-            <h3>Тип группы</h3>
-            <div id="gs-type" style="display:flex;gap:8px"></div>
-            <div id="gs-username-wrap" style="margin-top:12px; display:${isPublic ? "block" : "none"}">
-              <label style="font-size:11px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:1px">${t("username")}</label>
-              <div class="input-prefix" style="margin-top:6px">
-                <span class="prefix">@</span>
-                <input id="gs-username" maxlength="32" value="${escapeHtml(chat.username || "")}" placeholder="my_group">
-              </div>
-              <small style="display:block;margin-top:6px;color:var(--text-3);font-size:11px">5–32 символа, латиница, цифры, _. Люди смогут найти группу по @username.</small>
-            </div>
-          </div>
-          <div class="settings-section">
-            <h3>Ссылка-приглашение</h3>
-            <div id="gs-invite-info" style="color:var(--text-2);font-size:13px"></div>
-            <div class="share-row" id="gs-share-row" style="display:none">
-              <span class="share-link" id="gs-share-link"></span>
-              <button class="btn btn-ghost" id="gs-copy">Копировать</button>
-            </div>
-          </div>
+          <div class="settings-section"><h3>${t("name")}</h3><input id="gs-title" maxlength="80" value="${escapeHtml(chat.title || "")}"><textarea id="gs-desc" rows="2" maxlength="200" placeholder="${t("description")}" style="margin-top:8px">${escapeHtml(chat.description || "")}</textarea></div>
+          <div class="settings-section"><h3>Тип группы</h3><div id="gs-type" style="display:flex;gap:8px"></div><div id="gs-username-wrap" style="margin-top:12px; display:${isPublic ? "block" : "none"}"><label style="font-size:11px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:1px">${t("username")}</label><div class="input-prefix" style="margin-top:6px"><span class="prefix">@</span><input id="gs-username" maxlength="32" value="${escapeHtml(chat.username || "")}" placeholder="my_group"></div></div></div>
+          <div class="settings-section"><h3>Ссылка-приглашение</h3><div id="gs-invite-info" style="color:var(--text-2);font-size:13px"></div><div class="share-row" id="gs-share-row" style="display:none"><span class="share-link" id="gs-share-link"></span><button class="btn btn-ghost" id="gs-copy">Копировать</button></div></div>
           <div id="gs-error" class="form-error"></div>
-          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)">
-            <button class="btn btn-ghost" id="gs-cancel">${t("cancel")}</button>
-            <button class="btn btn-primary" id="gs-save">${t("save")}</button>
-          </div>`;
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)"><button class="btn btn-ghost" id="gs-cancel">${t("cancel")}</button><button class="btn btn-primary" id="gs-save">${t("save")}</button></div>`;
         let picked = isPublic;
         const typeBox = body.querySelector("#gs-type");
         const unameWrap = body.querySelector("#gs-username-wrap");
@@ -3317,89 +4069,49 @@ class NEXORA {
           typeBox.appendChild(b);
         });
         function refreshInvite() {
-          if (picked) {
-            inviteInfo.textContent = "Публичная группа — ссылка формируется по @username.";
-            shareRow.style.display = "none";
-          } else {
+          if (picked) { inviteInfo.textContent = "Публичная группа — ссылка формируется по @username."; shareRow.style.display = "none"; }
+          else {
             inviteInfo.textContent = "Приватная группа — присоединиться можно только по ссылке.";
             shareRow.style.display = "flex";
-            shareLink.textContent = chat.invite_token
-              ? `${location.origin}${location.pathname}?c=${chat.invite_token}`
-              : "Ссылка появится после первого сохранения";
+            shareLink.textContent = chat.invite_token ? `${location.origin}${location.pathname}?c=${chat.invite_token}` : "Ссылка появится после первого сохранения";
           }
         }
         refreshInvite();
-        body.querySelector("#gs-copy").addEventListener("click", () => {
-          navigator.clipboard.writeText(shareLink.textContent);
-          toast("Ссылка скопирована", "success");
-        });
+        body.querySelector("#gs-copy").addEventListener("click", () => { navigator.clipboard.writeText(shareLink.textContent); toast("Ссылка скопирована", "success"); });
         body.querySelector("#gs-cancel").addEventListener("click", () => this.closeModal());
         body.querySelector("#gs-save").addEventListener("click", async () => {
-          const errEl = body.querySelector("#gs-error");
-          errEl.classList.remove("show");
+          const errEl = body.querySelector("#gs-error"); errEl.classList.remove("show");
           const title = body.querySelector("#gs-title").value.trim();
           const desc = body.querySelector("#gs-desc").value.trim();
           const uname = body.querySelector("#gs-username").value.trim().toLowerCase();
           if (!title) { errEl.textContent = "Введите название"; errEl.classList.add("show"); return; }
-          if (picked && !/^[a-z][a-z0-9_]{4,31}$/.test(uname)) {
-            errEl.textContent = "Username: 5–32, начинается с буквы, a-z, 0-9, _";
-            errEl.classList.add("show"); return;
-          }
+          if (picked && !/^[a-z][a-z0-9_]{4,31}$/.test(uname)) { errEl.textContent = "Username: 5–32, начинается с буквы"; errEl.classList.add("show"); return; }
           try {
-            const { error } = await supabase.rpc("update_group_settings", {
-              p_chat_id: chat.id, p_title: title, p_description: desc,
-              p_is_public: picked, p_username: picked ? uname : null,
-            });
+            const { error } = await supabase.rpc("update_group_settings", { p_chat_id: chat.id, p_title: title, p_description: desc, p_is_public: picked, p_username: picked ? uname : null });
             if (error) throw error;
-            toast("Настройки сохранены", "success");
-            Sounds.success();
-            this.closeModal();
-            await this.refreshChats();
+            toast("Настройки сохранены", "success"); Sounds.success(); this.closeModal(); await this.refreshChats();
           } catch (e) { errEl.textContent = e.message || "Ошибка"; errEl.classList.add("show"); }
         });
       },
     });
   }
   openChannelShare(chat) {
-    const url = chat.is_public && chat.username
-      ? `${location.origin}${location.pathname}?c=${chat.username}`
-      : chat.invite_token
-        ? `${location.origin}${location.pathname}?c=${chat.invite_token}`
-        : "Ссылка появится после первого сохранения";
+    const url = chat.is_public && chat.username ? `${location.origin}${location.pathname}?c=${chat.username}` : chat.invite_token ? `${location.origin}${location.pathname}?c=${chat.invite_token}` : "Ссылка появится после первого сохранения";
     this.openModal({
-      title: "Поделиться",
-      narrow: true,
+      title: "Поделиться", narrow: true,
       body: (body) => {
-        body.innerHTML = `
-          <p style="color:var(--text-2);font-size:13px;margin-bottom:10px">
-            ${chat.is_public
-              ? `Публичный — любой найдёт по @${escapeHtml(chat.username || "")}.`
-              : "Приватный — только по этой ссылке."}
-          </p>
-          <div class="share-row">
-            <span class="share-link" id="ch-share">${escapeHtml(url)}</span>
-          </div>`;
-        body.querySelector("#ch-share").addEventListener("click", () => {
-          navigator.clipboard.writeText(url);
-          toast("Скопировано", "success");
-        });
-        const f = this._openModal.footerEl;
-        f.innerHTML = "";
+        body.innerHTML = `<p style="color:var(--text-2);font-size:13px;margin-bottom:10px">${chat.is_public ? `Публичный — любой найдёт по @${escapeHtml(chat.username || "")}.` : "Приватный — только по этой ссылке."}</p><div class="share-row"><span class="share-link" id="ch-share">${escapeHtml(url)}</span></div>`;
+        body.querySelector("#ch-share").addEventListener("click", () => { navigator.clipboard.writeText(url); toast("Скопировано", "success"); });
+        const f = this._openModal.footerEl; f.innerHTML = "";
         const copy = document.createElement("button");
         copy.className = "btn btn-primary"; copy.textContent = "Копировать ссылку";
-        copy.addEventListener("click", () => {
-          navigator.clipboard.writeText(url);
-          toast("Скопировано", "success");
-          Sounds.success();
-        });
+        copy.addEventListener("click", () => { navigator.clipboard.writeText(url); toast("Скопировано", "success"); Sounds.success(); });
         f.appendChild(copy);
       },
     });
   }
 
-  /* ============================================================
-     DEEP LINKS
-     ============================================================ */
+  /* DEEP LINKS */
   async handleDeepLink() {
     try {
       const params = new URLSearchParams(location.search);
@@ -3407,44 +4119,22 @@ class NEXORA {
       const usr = params.get("u");
       const chat = params.get("chat");
       const msg = params.get("msg");
-
-      if (chat && msg) {
-        await this.openMessageFromLink(chat, msg);
-        return;
-      }
-
+      if (chat && msg) { await this.openMessageFromLink(chat, msg); return; }
       if (chan) {
         const ch = await this.tryFindChannel(chan.replace(/^@/, ""));
         if (ch) {
-          if (ch.already_member) {
-            await this.openChatById(ch.id);
-          } else if (ch.is_public) {
+          if (ch.already_member) await this.openChatById(ch.id);
+          else if (ch.is_public) {
             if (confirm(`Присоединиться к «${ch.title}»?`)) {
-              try {
-                await supabase.rpc("join_channel", { p_chat_id: ch.id });
-                await this.refreshChats();
-                await this.openChatById(ch.id);
-                toast("Присоединились", "success");
-              } catch (e) { toast(e.message || "Ошибка", "error"); }
+              try { await supabase.rpc("join_channel", { p_chat_id: ch.id }); await this.refreshChats(); await this.openChatById(ch.id); toast("Присоединились", "success"); } catch (e) { toast(e.message || "Ошибка", "error"); }
             }
           } else {
             if (confirm(`Присоединиться к приватному «${ch.title}»?`)) {
-              try {
-                await supabase.rpc("join_channel", {
-                  p_chat_id: ch.id,
-                  p_invite_token: chan,
-                });
-                await this.refreshChats();
-                await this.openChatById(ch.id);
-                toast("Присоединились", "success");
-              } catch (e) { toast(e.message || "Ошибка", "error"); }
+              try { await supabase.rpc("join_channel", { p_chat_id: ch.id, p_invite_token: chan }); await this.refreshChats(); await this.openChatById(ch.id); toast("Присоединились", "success"); } catch (e) { toast(e.message || "Ошибка", "error"); }
             }
           }
-        } else {
-          toast("Канал не найден", "warning");
-        }
+        } else toast("Канал не найден", "warning");
       }
-
       if (usr) {
         const { data } = await supabase.rpc("search_user", { query: usr });
         const u = Array.isArray(data) ? data[0] : null;
@@ -3453,9 +4143,7 @@ class NEXORA {
     } catch (_) {}
   }
 
-  /* ============================================================
-     COMMENTS (исправлено)
-     ============================================================ */
+  /* COMMENTS */
   openCommentsFor(msg) {
     this.openModal({
       title: t("comments"),
@@ -3463,35 +4151,25 @@ class NEXORA {
         body.innerHTML = `<div class="empty-state"><span class="spinner"></span></div>`;
         let comments = [];
         try {
-          const { data } = await supabase
-            .from("messages").select("id, sender_id, content, created_at, deleted_at")
-            .eq("channel_post_id", msg.id)
-            .order("created_at", { ascending: true }).limit(200);
+          const { data } = await supabase.from("messages").select("id, sender_id, content, created_at, deleted_at").eq("channel_post_id", msg.id).order("created_at", { ascending: true }).limit(200);
           comments = data || [];
         } catch (_) {}
-        body.innerHTML = "";
         const renderComments = (list) => {
           body.innerHTML = "";
-          if (!list.length) {
-            body.innerHTML = `<p class="muted">Комментариев пока нет. Будь первым!</p>`;
-          } else {
+          if (!list.length) body.innerHTML = `<p class="muted">Комментариев пока нет. Будь первым!</p>`;
+          else {
             list.forEach(c => {
               const sender = this.members.find(x => x.user_id === c.sender_id);
               const name = c.sender_id === this.user.id ? "Ты" : (sender?.username || "User");
               const row = document.createElement("div");
               row.className = "comment-row";
               if (c.deleted_at) row.classList.add("deleted");
-              row.innerHTML = `
-                <div class="comment-author">${escapeHtml(name)}
-                  <span class="comment-time">${escapeHtml(formatTime(c.created_at))}</span>
-                </div>
-                <div class="comment-body">${c.deleted_at ? '<em style="opacity:.6">Сообщение удалено</em>' : renderMarkdown(c.content)}</div>`;
+              row.innerHTML = `<div class="comment-author">${escapeHtml(name)}<span class="comment-time">${escapeHtml(formatTime(c.created_at))}</span></div><div class="comment-body">${c.deleted_at ? '<em style="opacity:.6">Сообщение удалено</em>' : renderMarkdown(c.content)}</div>`;
               body.appendChild(row);
             });
           }
         };
         renderComments(comments);
-
         const input = document.createElement("input");
         input.placeholder = "Написать комментарий…";
         input.style.marginTop = "14px";
@@ -3504,12 +4182,7 @@ class NEXORA {
           const text = input.value.trim();
           if (!text) return;
           try {
-            const { data, error } = await supabase.from("messages").insert({
-              chat_id: this.activeChat.id,
-              sender_id: this.user.id,
-              content: text, kind: "text",
-              channel_post_id: msg.id,
-            }).select().single();
+            const { data, error } = await supabase.from("messages").insert({ chat_id: this.activeChat.id, sender_id: this.user.id, content: text, kind: "text", channel_post_id: msg.id }).select().single();
             if (error) throw error;
             input.value = "";
             toast("Комментарий добавлен", "success");
@@ -3519,37 +4192,22 @@ class NEXORA {
         });
         body.appendChild(input);
         body.appendChild(send);
-
-        /* Realtime-подписка на комментарии именно этого поста */
         const ch = supabase.channel("comments:" + msg.id)
-          .on("postgres_changes", {
-            event: "*", schema: "public", table: "messages",
-            filter: `channel_post_id=eq.${msg.id}`,
-          }, async () => {
+          .on("postgres_changes", { event: "*", schema: "public", table: "messages", filter: `channel_post_id=eq.${msg.id}` }, async () => {
             try {
-              const { data } = await supabase
-                .from("messages").select("id, sender_id, content, created_at, deleted_at")
-                .eq("channel_post_id", msg.id)
-                .order("created_at", { ascending: true }).limit(200);
+              const { data } = await supabase.from("messages").select("id, sender_id, content, created_at, deleted_at").eq("channel_post_id", msg.id).order("created_at", { ascending: true }).limit(200);
               comments = data || [];
               renderComments(comments);
             } catch (_) {}
           })
           .subscribe();
-        /* Отписываемся при закрытии модалки */
         const origClose = this.closeModal.bind(this);
-        this.closeModal = () => {
-          try { supabase.removeChannel(ch); } catch (_) {}
-          this.closeModal = origClose;
-          origClose();
-        };
+        this.closeModal = () => { try { supabase.removeChannel(ch); } catch (_) {} this.closeModal = origClose; origClose(); };
       },
     });
   }
 
-  /* ============================================================
-     LOCAL ROOMS
-     ============================================================ */
+  /* LOCAL ROOMS */
   async openLocalRoomsDialog() {
     if (!navigator.geolocation) return toast("Геолокация не поддерживается", "error");
     toast("Определяем местоположение…", "info");
@@ -3558,58 +4216,30 @@ class NEXORA {
         const { latitude: lat, longitude: lng } = pos.coords;
         let rooms = [];
         try {
-          const { data, error } = await supabase.rpc("find_local_rooms", {
-            p_lat: lat, p_lng: lng, p_limit: 30,
-          });
+          const { data, error } = await supabase.rpc("find_local_rooms", { p_lat: lat, p_lng: lng, p_limit: 30 });
           if (error) throw error;
           rooms = data || [];
         } catch (_) {}
         this.openModal({
           title: t("localRooms"),
           body: (body) => {
-            body.innerHTML = `
-              <p style="color:var(--text-2);font-size:13px;margin-bottom:12px">
-                Комнаты рядом с вами.
-              </p>
-              <div style="display:flex;gap:8px;margin-bottom:14px">
-                <button class="btn btn-primary" id="lr-create-btn" style="flex:1">📍 Создать</button>
-                <button class="btn btn-ghost" id="lr-refresh-btn">🔄</button>
-              </div>
-              <div id="lr-list"></div>`;
+            body.innerHTML = `<p style="color:var(--text-2);font-size:13px;margin-bottom:12px">Комнаты рядом с вами.</p><div style="display:flex;gap:8px;margin-bottom:14px"><button class="btn btn-primary" id="lr-create-btn" style="flex:1">📍 Создать</button><button class="btn btn-ghost" id="lr-refresh-btn">🔄</button></div><div id="lr-list"></div>`;
             const list = body.querySelector("#lr-list");
-            if (!rooms.length) {
-              list.innerHTML = `<div class="empty-state">Рядом пока никого.</div>`;
-            } else {
+            if (!rooms.length) list.innerHTML = `<div class="empty-state">Рядом пока никого.</div>`;
+            else {
               rooms.forEach(r => {
                 const card = document.createElement("div");
                 card.className = "local-room-card";
-                card.innerHTML = `
-                  <div class="local-room-icon">📍</div>
-                  <div class="local-room-body">
-                    <div class="local-room-title">${escapeHtml(r.name)}</div>
-                    <div class="local-room-meta">
-                      ${Math.round(r.distance_m)} м · ${r.members_count} участников
-                    </div>
-                  </div>`;
+                card.innerHTML = `<div class="local-room-icon">📍</div><div class="local-room-body"><div class="local-room-title">${escapeHtml(r.name)}</div><div class="local-room-meta">${Math.round(r.distance_m)} м · ${r.members_count} участников</div></div>`;
                 card.addEventListener("click", async () => {
-                  try {
-                    await supabase.rpc("join_local_room", { p_chat_id: r.chat_id });
-                  } catch (_) {}
-                  this.closeModal();
-                  await this.refreshChats();
-                  await this.openChatById(r.chat_id);
+                  try { await supabase.rpc("join_local_room", { p_chat_id: r.chat_id }); } catch (_) {}
+                  this.closeModal(); await this.refreshChats(); await this.openChatById(r.chat_id);
                 });
                 list.appendChild(card);
               });
             }
-            body.querySelector("#lr-create-btn").addEventListener("click", () => {
-              this.closeModal();
-              setTimeout(() => this.openCreateLocalRoomDialog(lat, lng), 100);
-            });
-            body.querySelector("#lr-refresh-btn").addEventListener("click", () => {
-              this.closeModal();
-              setTimeout(() => this.openLocalRoomsDialog(), 100);
-            });
+            body.querySelector("#lr-create-btn").addEventListener("click", () => { this.closeModal(); setTimeout(() => this.openCreateLocalRoomDialog(lat, lng), 100); });
+            body.querySelector("#lr-refresh-btn").addEventListener("click", () => { this.closeModal(); setTimeout(() => this.openLocalRoomsDialog(), 100); });
           },
         });
       },
@@ -3618,230 +4248,134 @@ class NEXORA {
   }
   openCreateLocalRoomDialog(lat, lng) {
     this.openModal({
-      title: t("createLocalRoom"),
-      narrow: true,
+      title: t("createLocalRoom"), narrow: true,
       body: (body) => {
         body.innerHTML = `
-          <div class="form-group"><label>Название</label>
-            <input id="lr-name" maxlength="60" placeholder="Концерт, Кафе">
-          </div>
-          <div class="form-group"><label>${t("radius")}</label>
-            <input id="lr-radius" type="number" min="50" max="5000" value="500">
-          </div>
-          <div class="form-group"><label>${t("ttl")}</label>
-            <input id="lr-ttl" type="number" min="5" max="1440" value="120">
-          </div>
+          <div class="form-group"><label>Название</label><input id="lr-name" maxlength="60" placeholder="Концерт, Кафе"></div>
+          <div class="form-group"><label>${t("radius")}</label><input id="lr-radius" type="number" min="50" max="5000" value="500"></div>
+          <div class="form-group"><label>${t("ttl")}</label><input id="lr-ttl" type="number" min="5" max="1440" value="120"></div>
           <div id="lr-error" class="form-error"></div>
-          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)">
-            <button class="btn btn-ghost" id="lr-cancel">${t("cancel")}</button>
-            <button class="btn btn-primary" id="lr-create">${t("create")}</button>
-          </div>`;
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)"><button class="btn btn-ghost" id="lr-cancel">${t("cancel")}</button><button class="btn btn-primary" id="lr-create">${t("create")}</button></div>`;
         body.querySelector("#lr-cancel").addEventListener("click", () => this.closeModal());
         body.querySelector("#lr-create").addEventListener("click", async () => {
           const name = body.querySelector("#lr-name").value.trim();
           const radius = parseInt(body.querySelector("#lr-radius").value, 10);
           const ttl = parseInt(body.querySelector("#lr-ttl").value, 10);
-          const errEl = body.querySelector("#lr-error");
-          errEl.classList.remove("show");
+          const errEl = body.querySelector("#lr-error"); errEl.classList.remove("show");
           if (!name) { errEl.textContent = "Введи название"; errEl.classList.add("show"); return; }
           try {
-            const { data, error } = await supabase.rpc("create_local_room", {
-              p_name: name, p_lat: lat, p_lng: lng,
-              p_radius_m: radius, p_ttl_minutes: ttl,
-            });
+            const { data, error } = await supabase.rpc("create_local_room", { p_name: name, p_lat: lat, p_lng: lng, p_radius_m: radius, p_ttl_minutes: ttl });
             if (error) throw error;
-            const { data: roomRow } = await supabase
-              .from("local_rooms").select("chat_id").eq("id", data).single();
+            const { data: roomRow } = await supabase.from("local_rooms").select("chat_id").eq("id", data).single();
             if (roomRow) {
-              try {
-                await supabase.rpc("join_local_room", { p_chat_id: roomRow.chat_id });
-              } catch (_) {}
-              this.closeModal();
-              await this.refreshChats();
-              await this.openChatById(roomRow.chat_id);
+              try { await supabase.rpc("join_local_room", { p_chat_id: roomRow.chat_id }); } catch (_) {}
+              this.closeModal(); await this.refreshChats(); await this.openChatById(roomRow.chat_id);
             }
-            toast("Локальная комната создана", "success");
-            Sounds.success();
+            toast("Локальная комната создана", "success"); Sounds.success();
           } catch (e) { errEl.textContent = e.message || "Ошибка"; errEl.classList.add("show"); }
         });
       },
     });
   }
 
-  /* ============================================================
-     EPHEMERAL CHAT
-     ============================================================ */
+  /* EPHEMERAL */
   openEphemeralDialog() {
     this.openModal({
-      title: t("createEphemeral"),
-      narrow: true,
+      title: t("createEphemeral"), narrow: true,
       body: (body) => {
         body.innerHTML = `
-          <p style="color:var(--text-2);font-size:13px;margin-bottom:12px">
-            Чат и все его сообщения удалятся через указанное время.
-          </p>
-          <div class="form-group"><label>Название</label>
-            <input id="eph-title" maxlength="60" placeholder="Секретный чат">
-          </div>
-          <div class="form-group"><label>${t("ttl")}</label>
-            <input id="eph-ttl" type="number" min="5" max="10080" value="60">
-          </div>
+          <p style="color:var(--text-2);font-size:13px;margin-bottom:12px">Чат и все его сообщения удалятся через указанное время.</p>
+          <div class="form-group"><label>Название</label><input id="eph-title" maxlength="60" placeholder="Секретный чат"></div>
+          <div class="form-group"><label>${t("ttl")}</label><input id="eph-ttl" type="number" min="5" max="10080" value="60"></div>
           <div id="eph-error" class="form-error"></div>
-          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)">
-            <button class="btn btn-ghost" id="eph-cancel">${t("cancel")}</button>
-            <button class="btn btn-primary" id="eph-create">${t("create")}</button>
-          </div>`;
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)"><button class="btn btn-ghost" id="eph-cancel">${t("cancel")}</button><button class="btn btn-primary" id="eph-create">${t("create")}</button></div>`;
         body.querySelector("#eph-cancel").addEventListener("click", () => this.closeModal());
         body.querySelector("#eph-create").addEventListener("click", async () => {
           const title = body.querySelector("#eph-title").value.trim();
           const ttl = parseInt(body.querySelector("#eph-ttl").value, 10);
-          const errEl = body.querySelector("#eph-error");
-          errEl.classList.remove("show");
+          const errEl = body.querySelector("#eph-error"); errEl.classList.remove("show");
           if (!ttl || ttl < 5) { errEl.textContent = "Минимум 5 минут"; errEl.classList.add("show"); return; }
           try {
-            const { data, error } = await supabase.rpc("create_ephemeral_chat", {
-              p_title: title || "Исчезающий чат", p_ttl_minutes: ttl,
-            });
+            const { data, error } = await supabase.rpc("create_ephemeral_chat", { p_title: title || "Исчезающий чат", p_ttl_minutes: ttl });
             if (error) throw error;
-            toast("Исчезающий чат создан", "success");
-            Sounds.success();
-            this.closeModal();
-            await this.refreshChats();
-            await this.openChatById(data);
+            toast("Исчезающий чат создан", "success"); Sounds.success();
+            this.closeModal(); await this.refreshChats(); await this.openChatById(data);
           } catch (e) { errEl.textContent = e.message || "Ошибка"; errEl.classList.add("show"); }
         });
       },
     });
   }
 
-  /* ============================================================
-     CATALOG
-     ============================================================ */
+  /* CATALOG */
   async openChannelCatalog() {
     let channels = [];
     try {
-      const { data } = await supabase.from("chats")
-        .select("id, title, description, avatar_url, username, is_public")
-        .eq("type", "channel").eq("is_public", true)
-        .not("username", "is", null)
-        .order("updated_at", { ascending: false }).limit(100);
+      const { data } = await supabase.from("chats").select("id, title, description, avatar_url, username, is_public").eq("type", "channel").eq("is_public", true).not("username", "is", null).order("updated_at", { ascending: false }).limit(100);
       channels = data || [];
     } catch (_) {}
     this.openModal({
-      title: t("catalog"),
-      wide: true,
+      title: t("catalog"), wide: true,
       body: (body) => {
-        if (!channels.length) {
-          body.innerHTML = `<div class="empty-state">Пока нет публичных каналов.</div>`;
-          return;
-        }
+        if (!channels.length) { body.innerHTML = `<div class="empty-state">Пока нет публичных каналов.</div>`; return; }
         body.innerHTML = "";
         channels.forEach(c => {
           const card = document.createElement("div");
           card.className = "catalog-card";
-          card.innerHTML = `
-            <div class="catalog-avatar">${ICONS.channel}</div>
-            <div class="catalog-body">
-              <div class="catalog-title">${escapeHtml(c.title || "")}
-                <span class="channel-badge public">public</span>
-              </div>
-              <div class="catalog-meta">@${escapeHtml(c.username)} · ${escapeHtml((c.description || "").slice(0, 60))}</div>
-            </div>`;
-          card.addEventListener("click", async () => {
-            this.closeModal();
-            await this.searchChannel(c.username);
-          });
+          card.innerHTML = `<div class="catalog-avatar">${ICONS.channel}</div><div class="catalog-body"><div class="catalog-title">${escapeHtml(c.title || "")} <span class="channel-badge public">public</span></div><div class="catalog-meta">@${escapeHtml(c.username)} · ${escapeHtml((c.description || "").slice(0, 60))}</div></div>`;
+          card.addEventListener("click", async () => { this.closeModal(); await this.searchChannel(c.username); });
           body.appendChild(card);
         });
       },
     });
   }
 
-  /* ============================================================
-     EMOJI PACKS
-     ============================================================ */
+  /* EMOJI PACKS */
   async openEmojiPacksManager() {
     let packs = [];
     try {
-      const { data } = await supabase.from("emoji_packs")
-        .select("id, name, is_public, created_at")
-        .eq("owner_id", this.user.id).order("created_at", { ascending: false });
+      const { data } = await supabase.from("emoji_packs").select("id, name, is_public, created_at").eq("owner_id", this.user.id).order("created_at", { ascending: false });
       packs = data || [];
     } catch (_) {}
     this.openModal({
-      title: t("emojiPacks"),
-      wide: true,
+      title: t("emojiPacks"), wide: true,
       body: (body) => {
-        body.innerHTML = `
-          <p style="color:var(--text-2);font-size:13px;margin-bottom:12px">
-            Создавай свои эмодзи. В сообщениях работают как :shortcode:
-          </p>
-          <button class="btn btn-primary btn-block" id="ep-new" style="margin-bottom:14px">
-            ＋ ${t("createPack")}
-          </button>
-          <div id="ep-list"></div>`;
+        body.innerHTML = `<p style="color:var(--text-2);font-size:13px;margin-bottom:12px">Создавай свои эмодзи. В сообщениях работают как :shortcode:</p><button class="btn btn-primary btn-block" id="ep-new" style="margin-bottom:14px">＋ ${t("createPack")}</button><div id="ep-list"></div>`;
         const list = body.querySelector("#ep-list");
-        if (!packs.length) {
-          list.innerHTML = `<div class="empty-state">Пока нет паков.</div>`;
-        } else {
+        if (!packs.length) list.innerHTML = `<div class="empty-state">Пока нет паков.</div>`;
+        else {
           packs.forEach(p => {
             const row = document.createElement("div");
             row.className = "settings-row";
-            row.innerHTML = `<div class="settings-row-info">
-              <div class="settings-row-label">${escapeHtml(p.name)}</div>
-              <div class="settings-row-desc">${p.is_public ? "публичный" : "приватный"}</div>
-            </div>`;
+            row.innerHTML = `<div class="settings-row-info"><div class="settings-row-label">${escapeHtml(p.name)}</div><div class="settings-row-desc">${p.is_public ? "публичный" : "приватный"}</div></div>`;
             const openBtn = document.createElement("button");
-            openBtn.className = "btn btn-ghost";
-            openBtn.textContent = "Открыть";
-            openBtn.addEventListener("click", () => {
-              this.closeModal();
-              setTimeout(() => this.openPackEditor(p), 100);
-            });
-            row.appendChild(openBtn);
-            list.appendChild(row);
+            openBtn.className = "btn btn-ghost"; openBtn.textContent = "Открыть";
+            openBtn.addEventListener("click", () => { this.closeModal(); setTimeout(() => this.openPackEditor(p), 100); });
+            row.appendChild(openBtn); list.appendChild(row);
           });
         }
-        body.querySelector("#ep-new").addEventListener("click", () => {
-          this.closeModal();
-          setTimeout(() => this.openCreatePackDialog(), 100);
-        });
+        body.querySelector("#ep-new").addEventListener("click", () => { this.closeModal(); setTimeout(() => this.openCreatePackDialog(), 100); });
       },
     });
   }
   openCreatePackDialog() {
     this.openModal({
-      title: t("createPack"),
-      narrow: true,
+      title: t("createPack"), narrow: true,
       body: (body) => {
         body.innerHTML = `
-          <div class="form-group"><label>Название пака</label>
-            <input id="ep-name" maxlength="40" placeholder="Мои коты">
-          </div>
-          <label style="display:flex;gap:10px;align-items:center;cursor:pointer;padding:6px 0">
-            <input type="checkbox" id="ep-public" style="width:auto" checked>
-            <span>Публичный пак</span>
-          </label>
+          <div class="form-group"><label>Название пака</label><input id="ep-name" maxlength="40" placeholder="Мои коты"></div>
+          <label style="display:flex;gap:10px;align-items:center;cursor:pointer;padding:6px 0"><input type="checkbox" id="ep-public" style="width:auto" checked><span>Публичный пак</span></label>
           <div id="ep-error" class="form-error"></div>
-          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)">
-            <button class="btn btn-ghost" id="ep-cancel">${t("cancel")}</button>
-            <button class="btn btn-primary" id="ep-create">${t("create")}</button>
-          </div>`;
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)"><button class="btn btn-ghost" id="ep-cancel">${t("cancel")}</button><button class="btn btn-primary" id="ep-create">${t("create")}</button></div>`;
         body.querySelector("#ep-cancel").addEventListener("click", () => this.closeModal());
         body.querySelector("#ep-create").addEventListener("click", async () => {
           const name = body.querySelector("#ep-name").value.trim();
           const isPublic = body.querySelector("#ep-public").checked;
-          const errEl = body.querySelector("#ep-error");
-          errEl.classList.remove("show");
+          const errEl = body.querySelector("#ep-error"); errEl.classList.remove("show");
           if (!name) { errEl.textContent = "Введи название"; errEl.classList.add("show"); return; }
           try {
-            const { data, error } = await supabase.from("emoji_packs").insert({
-              owner_id: this.user.id, name, is_public: isPublic,
-            }).select().single();
+            const { data, error } = await supabase.from("emoji_packs").insert({ owner_id: this.user.id, name, is_public: isPublic }).select().single();
             if (error) throw error;
-            toast("Пак создан", "success");
-            Sounds.success();
-            this.closeModal();
+            toast("Пак создан", "success"); Sounds.success(); this.closeModal();
             setTimeout(() => this.openPackEditor(data), 100);
           } catch (e) { errEl.textContent = e.message || "Ошибка"; errEl.classList.add("show"); }
         });
@@ -3851,27 +4385,17 @@ class NEXORA {
   async openPackEditor(pack) {
     let emojis = [];
     try {
-      const { data } = await supabase.from("custom_emojis")
-        .select("id, shortcode, url")
-        .eq("pack_id", pack.id).order("created_at", { ascending: true });
+      const { data } = await supabase.from("custom_emojis").select("id, shortcode, url").eq("pack_id", pack.id).order("created_at", { ascending: true });
       emojis = data || [];
     } catch (_) {}
     this.openModal({
-      title: `Пак: ${pack.name}`,
-      wide: true,
+      title: `Пак: ${pack.name}`, wide: true,
       body: (body) => {
-        body.innerHTML = `
-          <div style="display:flex;gap:8px;margin-bottom:14px">
-            <button class="btn btn-primary" id="ce-add">＋ ${t("uploadEmoji")}</button>
-          </div>
-          <div id="ce-list" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px"></div>`;
+        body.innerHTML = `<div style="display:flex;gap:8px;margin-bottom:14px"><button class="btn btn-primary" id="ce-add">＋ ${t("uploadEmoji")}</button></div><div id="ce-list" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px"></div>`;
         const list = body.querySelector("#ce-list");
         const renderList = (items) => {
           list.innerHTML = "";
-          if (!items.length) {
-            list.innerHTML = `<div class="empty-state" style="grid-column:1/-1">Пак пуст.</div>`;
-            return;
-          }
+          if (!items.length) { list.innerHTML = `<div class="empty-state" style="grid-column:1/-1">Пак пуст.</div>`; return; }
           items.forEach(e => {
             const tile = document.createElement("div");
             tile.style.cssText = "position:relative;aspect-ratio:1;background:var(--bg-2);border-radius:12px;padding:8px;display:flex;align-items:center;justify-content:center";
@@ -3886,12 +4410,7 @@ class NEXORA {
             const del = document.createElement("button");
             del.textContent = "✕";
             del.style.cssText = "position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;background:rgba(255,90,110,0.85);color:#fff;font-size:11px";
-            del.addEventListener("click", async () => {
-              if (!confirm("Удалить?")) return;
-              await supabase.from("custom_emojis").delete().eq("id", e.id);
-              emojis = emojis.filter(x => x.id !== e.id);
-              renderList(emojis);
-            });
+            del.addEventListener("click", async () => { if (!confirm("Удалить?")) return; await supabase.from("custom_emojis").delete().eq("id", e.id); emojis = emojis.filter(x => x.id !== e.id); renderList(emojis); });
             tile.appendChild(del);
             list.appendChild(tile);
           });
@@ -3899,28 +4418,21 @@ class NEXORA {
         renderList(emojis);
         body.querySelector("#ce-add").addEventListener("click", () => {
           const inp = document.createElement("input");
-          inp.type = "file";
-          inp.accept = "image/*";
+          inp.type = "file"; inp.accept = "image/*";
           inp.addEventListener("change", async () => {
-            const f = inp.files[0];
-            if (!f) return;
+            const f = inp.files[0]; if (!f) return;
             if (f.size > STICKER_MAX) return toast("Максимум 2 MB", "warning");
             const shortcode = (prompt("Короткий код:", f.name.replace(/\.[^.]+$/, "").toLowerCase().replace(/[^a-z0-9_]/g, "")) || "").trim();
             if (!shortcode) return;
             try {
               const safe = f.name.replace(/[^\w.\-]+/g, "_").slice(0, 60);
               const path = `${this.user.id}/emoji-${pack.id}-${Date.now()}-${safe}`;
-              const { error: upErr } = await supabase.storage
-                .from(STICKER_BUCKET)
-                .upload(path, f, { contentType: f.type, upsert: false });
+              const { error: upErr } = await supabase.storage.from(STICKER_BUCKET).upload(path, f, { contentType: f.type, upsert: false });
               if (upErr) throw upErr;
               const { data: pub } = supabase.storage.from(STICKER_BUCKET).getPublicUrl(path);
-              const { data: row, error } = await supabase.from("custom_emojis").insert({
-                pack_id: pack.id, shortcode: shortcode, url: pub.publicUrl,
-              }).select().single();
+              const { data: row, error } = await supabase.from("custom_emojis").insert({ pack_id: pack.id, shortcode, url: pub.publicUrl }).select().single();
               if (error) throw error;
-              emojis.push(row);
-              renderList(emojis);
+              emojis.push(row); renderList(emojis);
               toast("Эмодзи добавлен", "success");
             } catch (e) { toast(e.message || "Ошибка", "error"); }
           });
@@ -3930,41 +4442,29 @@ class NEXORA {
     });
   }
 
-  /* ============================================================
-     ACTIVITY
-     ============================================================ */
+  /* ACTIVITY */
   openActivityDialog() {
     this.openModal({
-      title: t("activity"),
-      narrow: true,
+      title: t("activity"), narrow: true,
       body: (body) => {
         body.innerHTML = `
-          <p style="color:var(--text-2);font-size:13px;margin-bottom:10px">
-            Короткий текст рядом с твоим именем.
-          </p>
+          <p style="color:var(--text-2);font-size:13px;margin-bottom:10px">Короткий текст рядом с твоим именем.</p>
           <input id="act-input" maxlength="60" value="${escapeHtml(this.profile.activity_text || "")}" placeholder="💻 работаю над кодом">
-          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)">
-            <button class="btn btn-ghost" id="act-cancel">${t("cancel")}</button>
-            <button class="btn btn-primary" id="act-save">${t("save")}</button>
-          </div>`;
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)"><button class="btn btn-ghost" id="act-cancel">${t("cancel")}</button><button class="btn btn-primary" id="act-save">${t("save")}</button></div>`;
         body.querySelector("#act-cancel").addEventListener("click", () => this.closeModal());
         body.querySelector("#act-save").addEventListener("click", async () => {
           const text = body.querySelector("#act-input").value.trim().slice(0, 60);
           try {
             await this.updateProfile({ activity_text: text });
             this.profile.activity_text = text;
-            toast("Активность обновлена", "success");
-            Sounds.success();
-            this.closeModal();
+            toast("Активность обновлена", "success"); Sounds.success(); this.closeModal();
           } catch (e) { toast(e.message || "Ошибка", "error"); }
         });
       },
     });
   }
 
-  /* ============================================================
-     COVER PICKER
-     ============================================================ */
+  /* COVER */
   openCoverPicker() {
     const presets = [
       { id: "gradient-1", cls: "cover-gradient-1", label: "Gradient 1" },
@@ -3976,13 +4476,10 @@ class NEXORA {
       { id: "waves",      cls: "waves", label: "Waves" },
     ];
     this.openModal({
-      title: t("virtualCover"),
-      narrow: true,
+      title: t("virtualCover"), narrow: true,
       body: (body) => {
         body.innerHTML = `
-          <p style="color:var(--text-2);font-size:13px;margin-bottom:10px">
-            Виртуальные обложки. Не требуют загрузки картинки.
-          </p>
+          <p style="color:var(--text-2);font-size:13px;margin-bottom:10px">Виртуальные обложки. Не требуют загрузки картинки.</p>
           <div class="cover-grid" id="cover-grid"></div>
           <button class="btn btn-ghost btn-block" id="cover-upload" style="margin-top:14px">📷 Загрузить свою</button>
           <button class="btn btn-ghost btn-block" id="cover-clear" style="margin-top:8px">🚫 Убрать обложку</button>`;
@@ -3995,103 +4492,60 @@ class NEXORA {
           b.addEventListener("click", async () => {
             try {
               await this.updateProfile({ cover_preset: p.id, cover_url: null });
-              this.profile.cover_preset = p.id;
-              this.profile.cover_url = null;
-              toast("Обложка обновлена", "success");
-              Sounds.success();
-              this.closeModal();
+              this.profile.cover_preset = p.id; this.profile.cover_url = null;
+              toast("Обложка обновлена", "success"); Sounds.success(); this.closeModal();
             } catch (e) { toast(e.message || "Ошибка", "error"); }
           });
           grid.appendChild(b);
         });
-        body.querySelector("#cover-upload").addEventListener("click", () => {
-          this.closeModal();
-          $("file-cover").click();
-        });
+        body.querySelector("#cover-upload").addEventListener("click", () => { this.closeModal(); $("file-cover").click(); });
         body.querySelector("#cover-clear").addEventListener("click", async () => {
           try {
             await this.updateProfile({ cover_preset: null, cover_url: null });
-            this.profile.cover_preset = null;
-            this.profile.cover_url = null;
-            toast("Обложка убрана", "warning");
-            this.closeModal();
+            this.profile.cover_preset = null; this.profile.cover_url = null;
+            toast("Обложка убрана", "warning"); this.closeModal();
           } catch (e) { toast(e.message || "Ошибка", "error"); }
         });
       },
     });
   }
 
-  /* ============================================================
-     SETTINGS
-     ============================================================ */
+  /* SETTINGS */
   openSettings() {
     this.openModal({
-      title: t("settings"),
-      wide: true,
+      title: t("settings"), wide: true,
       body: (body) => {
         body.appendChild(this.section("👤 " + t("account"), [
           this.row(t("username"), this.profile.username, () => this.changeUsername()),
-          this.row("NEXORA ID", this.profile.nexora_id, () => {
-            navigator.clipboard.writeText(this.profile.nexora_id);
-            toast("ID скопирован", "success");
-            Sounds.click();
-          }, "Copy"),
-          this.row(t("accounts"), "Переключение", () => {
-            this.closeModal();
-            setTimeout(() => this.openAccountsSwitcher(), 100);
-          }, t("open")),
+          this.row("NEXORA ID", this.profile.nexora_id, () => { navigator.clipboard.writeText(this.profile.nexora_id); toast("ID скопирован", "success"); Sounds.click(); }, "Copy"),
+          this.row(t("accounts"), "Переключение", () => { this.closeModal(); setTimeout(() => this.openAccountsSwitcher(), 100); }, t("open")),
         ]));
-
         body.appendChild(this.section("🔒 " + t("security"), [
           this.row(t("password"), t("changePassword"), () => this.changePassword()),
           this.row("2FA", t("twoFALabel"), () => this.toggle2FA()),
-          this.row(t("sessions"), "Активные устройства", () => {
-            this.closeModal();
-            setTimeout(() => this.openSessionsDialog(), 100);
-          }, t("open")),
+          this.row(t("sessions"), "Активные устройства", () => { this.closeModal(); setTimeout(() => this.openSessionsDialog(), 100); }, t("open")),
         ]));
 
         const profileSec = document.createElement("div");
         profileSec.className = "settings-section";
         profileSec.innerHTML = `<h3>🎨 Профиль</h3>`;
-        profileSec.appendChild(this.row("Обложка", "Виртуальная или своя", () => {
-          this.closeModal();
-          setTimeout(() => this.openCoverPicker(), 100);
-        }, t("open")));
-        profileSec.appendChild(this.row(t("activity"), this.profile.activity_text || "не задана", () => {
-          this.closeModal();
-          setTimeout(() => this.openActivityDialog(), 100);
-        }, t("edit")));
-        profileSec.appendChild(this.row("Значок рядом с именем", this.profile.badge_emoji || "не выбран", () => {
-          this.closeModal();
-          setTimeout(() => this.openBadgePicker(), 100);
-        }, t("edit")));
-        profileSec.appendChild(this.row("Соц-ссылки", "Профиль", () => {
-          this.closeModal();
-          setTimeout(() => this.openSocialLinksEditor(), 100);
-        }, t("edit")));
+        profileSec.appendChild(this.row("Обложка", "Виртуальная или своя", () => { this.closeModal(); setTimeout(() => this.openCoverPicker(), 100); }, t("open")));
+        profileSec.appendChild(this.row(t("activity"), this.profile.activity_text || "не задана", () => { this.closeModal(); setTimeout(() => this.openActivityDialog(), 100); }, t("edit")));
+        profileSec.appendChild(this.row("Значок рядом с именем", this.profile.badge_emoji || "не выбран", () => { this.closeModal(); setTimeout(() => this.openBadgePicker(), 100); }, t("edit")));
+        profileSec.appendChild(this.row("Соц-ссылки", "Профиль", () => { this.closeModal(); setTimeout(() => this.openSocialLinksEditor(), 100); }, t("edit")));
         body.appendChild(profileSec);
 
-        /* Статус */
         const statusSec = document.createElement("div");
         statusSec.className = "settings-section";
         statusSec.innerHTML = `<h3>🟢 Статус</h3>`;
         const statusRow = document.createElement("div");
         statusRow.className = "settings-row";
         const cur = this.profile.status || "online";
-        statusRow.innerHTML = `<div class="settings-row-info">
-          <div class="settings-row-label">${escapeHtml(STATUS_META[cur]?.label || "В сети")}</div>
-          <div class="settings-row-desc">Виден другим пользователям</div>
-        </div>`;
+        statusRow.innerHTML = `<div class="settings-row-info"><div class="settings-row-label">${escapeHtml(STATUS_META[cur]?.label || "В сети")}</div><div class="settings-row-desc">Виден другим пользователям</div></div>`;
         const statusBtn = document.createElement("button");
-        statusBtn.className = "btn btn-ghost";
-        statusBtn.textContent = t("edit");
-        statusBtn.addEventListener("click", () => {
-          this.closeModal();
-          setTimeout(() => this.openStatusPicker(), 100);
-        });
-        statusRow.appendChild(statusBtn);
-        statusSec.appendChild(statusRow);
+        statusBtn.className = "btn btn-ghost"; statusBtn.textContent = t("edit");
+        statusBtn.addEventListener("click", () => { this.closeModal(); setTimeout(() => this.openStatusPicker(), 100); });
+        statusRow.appendChild(statusBtn); statusSec.appendChild(statusRow);
         body.appendChild(statusSec);
 
         const notif = document.createElement("div");
@@ -4099,13 +4553,9 @@ class NEXORA {
         notif.innerHTML = `<h3>🔔 ${t("notifications")}</h3>`;
         const notifRow = document.createElement("div");
         notifRow.className = "settings-row";
-        notifRow.innerHTML = `<div class="settings-row-info">
-          <div class="settings-row-label">${t("browserNotif")}</div>
-          <div class="settings-row-desc" id="notif-status">${Notification.permission}</div>
-        </div>`;
+        notifRow.innerHTML = `<div class="settings-row-info"><div class="settings-row-label">${t("browserNotif")}</div><div class="settings-row-desc" id="notif-status">${Notification.permission}</div></div>`;
         const notifBtn = document.createElement("button");
-        notifBtn.className = "btn btn-ghost";
-        notifBtn.textContent = "Разрешить";
+        notifBtn.className = "btn btn-ghost"; notifBtn.textContent = "Разрешить";
         notifBtn.addEventListener("click", async () => {
           const ok = await this.requestNotificationPermission();
           notifRow.querySelector("#notif-status").textContent = Notification.permission;
@@ -4116,44 +4566,26 @@ class NEXORA {
 
         const enableNotifRow = document.createElement("div");
         enableNotifRow.className = "settings-row";
-        enableNotifRow.innerHTML = `<div class="settings-row-info">
-          <div class="settings-row-label">Включить уведомления</div>
-          <div class="settings-row-desc">Показывать уведомления о новых сообщениях</div>
-        </div>`;
+        enableNotifRow.innerHTML = `<div class="settings-row-info"><div class="settings-row-label">Включить уведомления</div><div class="settings-row-desc">Показывать уведомления о новых сообщениях</div></div>`;
         const enableNotifSwitch = document.createElement("div");
         enableNotifSwitch.className = "switch" + (this.profile.notifications_enabled !== false ? " on" : "");
         enableNotifSwitch.addEventListener("click", async () => {
           const next = !enableNotifSwitch.classList.contains("on");
           enableNotifSwitch.classList.toggle("on", next);
-          try {
-            await this.updateProfile({ notifications_enabled: next });
-            this.profile.notifications_enabled = next;
-            toast(next ? "Уведомления включены" : "Уведомления выключены", "success");
-          } catch (e) { toast(e.message || "Ошибка", "error"); }
+          try { await this.updateProfile({ notifications_enabled: next }); this.profile.notifications_enabled = next; toast(next ? "Уведомления включены" : "Уведомления выключены", "success"); } catch (e) { toast(e.message || "Ошибка", "error"); }
         });
-        enableNotifRow.appendChild(enableNotifSwitch);
-        notif.appendChild(enableNotifRow);
+        enableNotifRow.appendChild(enableNotifSwitch); notif.appendChild(enableNotifRow);
 
         const soundRow = document.createElement("div");
         soundRow.className = "settings-row";
-        soundRow.innerHTML = `<div class="settings-row-info">
-          <div class="settings-row-label">${t("sound")}</div>
-          <div class="settings-row-desc">${t("soundDesc")}</div>
-        </div>`;
+        soundRow.innerHTML = `<div class="settings-row-info"><div class="settings-row-label">${t("sound")}</div><div class="settings-row-desc">${t("soundDesc")}</div></div>`;
         const sw = document.createElement("div");
         sw.className = "switch" + (Sounds.enabled ? " on" : "");
-        sw.addEventListener("click", () => {
-          const on = Sounds.toggle();
-          sw.classList.toggle("on", on);
-          toast(on ? "Звук включён" : "Звук выключен", "success");
-        });
-        soundRow.appendChild(sw);
-        notif.appendChild(soundRow);
+        sw.addEventListener("click", () => { const on = Sounds.toggle(); sw.classList.toggle("on", on); toast(on ? "Звук включён" : "Звук выключен", "success"); });
+        soundRow.appendChild(sw); notif.appendChild(soundRow);
 
         const testBtn = document.createElement("button");
-        testBtn.className = "btn btn-ghost";
-        testBtn.textContent = "🔊 " + t("testSound");
-        testBtn.style.marginTop = "10px";
+        testBtn.className = "btn btn-ghost"; testBtn.textContent = "🔊 " + t("testSound"); testBtn.style.marginTop = "10px";
         testBtn.addEventListener("click", () => Sounds.message());
         notif.appendChild(testBtn);
         body.appendChild(notif);
@@ -4163,110 +4595,71 @@ class NEXORA {
         appearance.innerHTML = `<h3>🎨 ${t("appearance")}</h3>`;
         const themeRow = document.createElement("div");
         themeRow.className = "settings-row";
-        themeRow.innerHTML = `<div class="settings-row-info">
-          <div class="settings-row-label">${t("profileTheme")}</div>
-          <div class="settings-row-desc">${escapeHtml(PROFILE_THEMES[getProfileTheme()]?.name || "NEXORA Dark")}</div>
-        </div>`;
+        themeRow.innerHTML = `<div class="settings-row-info"><div class="settings-row-label">${t("profileTheme")}</div><div class="settings-row-desc">${escapeHtml(PROFILE_THEMES[getProfileTheme()]?.name || "NEXORA Dark")}</div></div>`;
         const themeBtn = document.createElement("button");
-        themeBtn.className = "btn btn-ghost";
-        themeBtn.textContent = t("edit");
-        themeBtn.addEventListener("click", () => {
-          this.closeModal();
-          setTimeout(() => this.openProfileThemePicker(), 100);
-        });
-        themeRow.appendChild(themeBtn);
-        appearance.appendChild(themeRow);
+        themeBtn.className = "btn btn-ghost"; themeBtn.textContent = t("edit");
+        themeBtn.addEventListener("click", () => { this.closeModal(); setTimeout(() => this.openProfileThemePicker(), 100); });
+        themeRow.appendChild(themeBtn); appearance.appendChild(themeRow);
 
         const langRow = document.createElement("div");
         langRow.className = "settings-row";
-        langRow.innerHTML = `<div class="settings-row-info">
-          <div class="settings-row-label">${t("language")}</div>
-          <div class="settings-row-desc">${escapeHtml(LOCALES[currentLocale()] || "Русский")}</div>
-        </div>`;
+        langRow.innerHTML = `<div class="settings-row-info"><div class="settings-row-label">${t("language")}</div><div class="settings-row-desc">${escapeHtml(LOCALES[currentLocale()] || "Русский")}</div></div>`;
         const langBtn = document.createElement("button");
-        langBtn.className = "btn btn-ghost";
-        langBtn.textContent = t("edit");
-        langBtn.addEventListener("click", () => {
-          this.closeModal();
-          setTimeout(() => this.openLanguageDialog(), 100);
-        });
-        langRow.appendChild(langBtn);
-        appearance.appendChild(langRow);
+        langBtn.className = "btn btn-ghost"; langBtn.textContent = t("edit");
+        langBtn.addEventListener("click", () => { this.closeModal(); setTimeout(() => this.openLanguageDialog(), 100); });
+        langRow.appendChild(langBtn); appearance.appendChild(langRow);
         body.appendChild(appearance);
 
         const privacy = document.createElement("div");
         privacy.className = "settings-section";
         privacy.innerHTML = `<h3>🛡 ${t("privacy")}</h3>`;
-        privacy.appendChild(this.toggleRow(t("showOnline"), this.profile.show_online, (v) => {
-          this.updateProfile({ show_online: v }).then(() => toast("Сохранено", "success"));
-        }));
-        privacy.appendChild(this.toggleRow(t("findable"), this.profile.findable, (v) => {
-          this.updateProfile({ findable: v }).then(() => toast("Сохранено", "success"));
-        }));
+        privacy.appendChild(this.toggleRow(t("showOnline"), this.profile.show_online, (v) => { this.updateProfile({ show_online: v }).then(() => toast("Сохранено", "success")); }));
+        privacy.appendChild(this.toggleRow(t("findable"), this.profile.findable, (v) => { this.updateProfile({ findable: v }).then(() => toast("Сохранено", "success")); }));
         body.appendChild(privacy);
 
         const botsSec = document.createElement("div");
         botsSec.className = "settings-section";
-        botsSec.innerHTML = `<h3>🤖 ${t("bots")}</h3>
-          <p style="color:var(--text-2);font-size:13px;margin-bottom:10px">${t("botsHint")}</p>`;
+        botsSec.innerHTML = `<h3>🤖 ${t("bots")}</h3><p style="color:var(--text-2);font-size:13px;margin-bottom:10px">${t("botsHint")}</p>`;
         const myBotsBtn = document.createElement("button");
-        myBotsBtn.className = "btn btn-primary";
-        myBotsBtn.textContent = t("myBots");
+        myBotsBtn.className = "btn btn-primary"; myBotsBtn.textContent = t("myBots");
         myBotsBtn.addEventListener("click", () => { this.closeModal(); this.openMyBots(); });
-        botsSec.appendChild(myBotsBtn);
-        body.appendChild(botsSec);
+        botsSec.appendChild(myBotsBtn); body.appendChild(botsSec);
 
         const emojiSec = document.createElement("div");
         emojiSec.className = "settings-section";
         emojiSec.innerHTML = `<h3>😀 ${t("emojiPacks")}</h3>`;
         const emojiBtn = document.createElement("button");
-        emojiBtn.className = "btn btn-primary";
-        emojiBtn.textContent = t("open");
-        emojiBtn.addEventListener("click", () => {
-          this.closeModal();
-          setTimeout(() => this.openEmojiPacksManager(), 100);
-        });
-        emojiSec.appendChild(emojiBtn);
-        body.appendChild(emojiSec);
+        emojiBtn.className = "btn btn-primary"; emojiBtn.textContent = t("open");
+        emojiBtn.addEventListener("click", () => { this.closeModal(); setTimeout(() => this.openEmojiPacksManager(), 100); });
+        emojiSec.appendChild(emojiBtn); body.appendChild(emojiSec);
 
         const serviceSec = document.createElement("div");
         serviceSec.className = "settings-section";
         serviceSec.innerHTML = `<h3>📂 ${t("serviceChats")}</h3>`;
         const row1 = document.createElement("button");
-        row1.className = "btn btn-ghost btn-block";
-        row1.textContent = "⭐ " + t("openSaved");
-        row1.style.marginBottom = "8px";
+        row1.className = "btn btn-ghost btn-block"; row1.textContent = "⭐ " + t("openSaved"); row1.style.marginBottom = "8px";
         row1.addEventListener("click", () => { this.closeModal(); this.openSavedChat(); });
         serviceSec.appendChild(row1);
         const row2 = document.createElement("button");
-        row2.className = "btn btn-ghost btn-block";
-        row2.textContent = "📩 " + t("openNotif");
+        row2.className = "btn btn-ghost btn-block"; row2.textContent = "📩 " + t("openNotif");
         row2.addEventListener("click", () => { this.closeModal(); this.openNotificationChat(); });
-        serviceSec.appendChild(row2);
-        body.appendChild(serviceSec);
+        serviceSec.appendChild(row2); body.appendChild(serviceSec);
 
         const searchSec = document.createElement("div");
         searchSec.className = "settings-section";
         searchSec.innerHTML = `<h3>🔍 ${t("searchMessages")}</h3>`;
         const inp = document.createElement("input");
         inp.placeholder = "Введи текст…";
-        inp.addEventListener("keydown", (e) => {
-          if (e.key === "Enter") this.globalMessageSearch(inp.value.trim());
-        });
-        searchSec.appendChild(inp);
-        body.appendChild(searchSec);
+        inp.addEventListener("keydown", (e) => { if (e.key === "Enter") this.globalMessageSearch(inp.value.trim()); });
+        searchSec.appendChild(inp); body.appendChild(searchSec);
 
         const about = document.createElement("div");
         about.className = "settings-section";
-        about.innerHTML = `<h3>ℹ ${t("aboutApp")}</h3>
-          <div style="color:var(--text-0);font-weight:700">NEXORA</div>
-          <div style="color:var(--text-2);font-size:13px;margin-top:4px">Connect without limits.</div>
-          <div style="color:var(--text-3);font-size:12px;margin-top:6px">Version 9.0</div>`;
+        about.innerHTML = `<h3>ℹ ${t("aboutApp")}</h3><div style="color:var(--text-0);font-weight:700">NEXORA</div><div style="color:var(--text-2);font-size:13px;margin-top:4px">Connect without limits.</div><div style="color:var(--text-3);font-size:12px;margin-top:6px">Version 9.2</div>`;
         body.appendChild(about);
 
         const out = document.createElement("button");
-        out.className = "btn btn-danger btn-block";
-        out.textContent = t("logoutAccount");
+        out.className = "btn btn-danger btn-block"; out.textContent = t("logoutAccount");
         out.addEventListener("click", () => { this.closeModal(); this.logout(); });
         body.appendChild(out);
       },
@@ -4282,71 +4675,42 @@ class NEXORA {
   row(label, value, onClick, btnLabel = "Изменить") {
     const r = document.createElement("div");
     r.className = "settings-row";
-    r.innerHTML = `<div class="settings-row-info">
-      <div class="settings-row-label">${escapeHtml(label)}</div>
-      <div class="settings-row-desc">${escapeHtml(value)}</div>
-    </div>`;
+    r.innerHTML = `<div class="settings-row-info"><div class="settings-row-label">${escapeHtml(label)}</div><div class="settings-row-desc">${escapeHtml(value)}</div></div>`;
     const b = document.createElement("button");
-    b.className = "btn btn-ghost";
-    b.textContent = btnLabel;
-    b.addEventListener("click", onClick);
+    b.className = "btn btn-ghost"; b.textContent = btnLabel; b.addEventListener("click", onClick);
     r.appendChild(b);
     return r;
   }
   toggleRow(label, initial, onChange) {
     const r = document.createElement("div");
     r.className = "settings-row";
-    r.innerHTML = `<div class="settings-row-info">
-      <div class="settings-row-label">${escapeHtml(label)}</div>
-    </div>`;
+    r.innerHTML = `<div class="settings-row-info"><div class="settings-row-label">${escapeHtml(label)}</div></div>`;
     const sw = document.createElement("div");
     sw.className = "switch" + (initial ? " on" : "");
-    sw.addEventListener("click", () => {
-      const next = !sw.classList.contains("on");
-      sw.classList.toggle("on", next);
-      Sounds.click();
-      onChange(next);
-    });
+    sw.addEventListener("click", () => { const next = !sw.classList.contains("on"); sw.classList.toggle("on", next); Sounds.click(); onChange(next); });
     r.appendChild(sw);
     return r;
   }
 
-  /* ============================================================
-     STATUS PICKER
-     ============================================================ */
+  /* STATUS PICKER */
   openStatusPicker() {
     const cur = this.profile.status || "online";
     this.openModal({
-      title: "Статус",
-      narrow: true,
+      title: "Статус", narrow: true,
       body: (body) => {
         body.innerHTML = "";
         Object.entries(STATUS_META).forEach(([key, meta]) => {
           const row = document.createElement("div");
-          row.className = "settings-row";
-          row.style.cursor = "pointer";
+          row.className = "settings-row"; row.style.cursor = "pointer";
           if (key === cur) row.style.background = "var(--accent-dim)";
-          row.innerHTML = `
-            <div class="settings-row-info">
-              <div class="settings-row-label">
-                <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${meta.color};margin-right:8px"></span>
-                ${escapeHtml(meta.label)}
-              </div>
-            </div>`;
+          row.innerHTML = `<div class="settings-row-info"><div class="settings-row-label"><span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${meta.color};margin-right:8px"></span>${escapeHtml(meta.label)}</div></div>`;
           row.addEventListener("click", async () => {
             try {
               await this.updateProfile({ status: key });
               this.profile.status = key;
-              if (key === "invisible") {
-                await supabase.from("profiles").update({ is_online: false }).eq("id", this.user.id);
-                this.profile.is_online = false;
-              } else {
-                await this.setOnline(true);
-              }
-              toast("Статус: " + meta.label, "success");
-              Sounds.success();
-              this.closeModal();
-              this.renderSidebarFooter();
+              if (key === "invisible") { await supabase.from("profiles").update({ is_online: false }).eq("id", this.user.id); this.profile.is_online = false; }
+              else await this.setOnline(true);
+              toast("Статус: " + meta.label, "success"); Sounds.success(); this.closeModal(); this.renderSidebarFooter();
             } catch (e) { toast(e.message || "Ошибка", "error"); }
           });
           body.appendChild(row);
@@ -4354,113 +4718,70 @@ class NEXORA {
       },
     });
   }
-
-  /* ============================================================
-     BADGE EMOJI PICKER
-     ============================================================ */
   openBadgePicker() {
     this.openModal({
-      title: "Значок рядом с именем",
-      narrow: true,
+      title: "Значок рядом с именем", narrow: true,
       body: (body) => {
-        body.innerHTML = `
-          <p style="color:var(--text-2);font-size:13px;margin-bottom:10px">
-            Выбери эмодзи, который будет рядом с твоим именем.
-          </p>
-          <div id="badge-grid" style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px"></div>
-          <button class="btn btn-ghost btn-block" id="badge-clear" style="margin-top:14px">Убрать значок</button>`;
+        body.innerHTML = `<p style="color:var(--text-2);font-size:13px;margin-bottom:10px">Выбери эмодзи, который будет рядом с твоим именем.</p><div id="badge-grid" style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px"></div><button class="btn btn-ghost btn-block" id="badge-clear" style="margin-top:14px">Убрать значок</button>`;
         const grid = body.querySelector("#badge-grid");
-        const render = () => {
-          grid.innerHTML = "";
-          BADGE_EMOJIS.forEach(e => {
-            const b = document.createElement("button");
-            b.textContent = e;
-            b.style.cssText = `aspect-ratio:1;font-size:24px;border-radius:12px;background:${this.profile.badge_emoji === e ? "var(--accent-dim)" : "var(--bg-2)"};border:1px solid ${this.profile.badge_emoji === e ? "var(--accent)" : "var(--border)"}`;
-            b.addEventListener("click", async () => {
-              try {
-                await this.updateProfile({ badge_emoji: e });
-                this.profile.badge_emoji = e;
-                toast("Значок обновлён", "success");
-                Sounds.success();
-                this.closeModal();
-                this.renderSidebarFooter();
-              } catch (err) { toast(err.message || "Ошибка", "error"); }
-            });
-            grid.appendChild(b);
+        BADGE_EMOJIS.forEach(e => {
+          const b = document.createElement("button");
+          b.textContent = e;
+          b.style.cssText = `aspect-ratio:1;font-size:24px;border-radius:12px;background:${this.profile.badge_emoji === e ? "var(--accent-dim)" : "var(--bg-2)"};border:1px solid ${this.profile.badge_emoji === e ? "var(--accent)" : "var(--border)"}`;
+          b.addEventListener("click", async () => {
+            try { await this.updateProfile({ badge_emoji: e }); this.profile.badge_emoji = e; toast("Значок обновлён", "success"); Sounds.success(); this.closeModal(); this.renderSidebarFooter(); } catch (err) { toast(err.message || "Ошибка", "error"); }
           });
-        };
-        render();
+          grid.appendChild(b);
+        });
         body.querySelector("#badge-clear").addEventListener("click", async () => {
-          try {
-            await this.updateProfile({ badge_emoji: null });
-            this.profile.badge_emoji = null;
-            toast("Значок убран", "warning");
-            this.closeModal();
-            this.renderSidebarFooter();
-          } catch (e) { toast(e.message || "Ошибка", "error"); }
+          try { await this.updateProfile({ badge_emoji: null }); this.profile.badge_emoji = null; toast("Значок убран", "warning"); this.closeModal(); this.renderSidebarFooter(); } catch (e) { toast(e.message || "Ошибка", "error"); }
         });
       },
     });
   }
-
-  /* ============================================================
-     SOCIAL LINKS EDITOR
-     ============================================================ */
   openSocialLinksEditor() {
     const current = this.profile.social_links || {};
     this.openModal({
-      title: "Соц-ссылки",
-      wide: true,
+      title: "Соц-ссылки", wide: true,
       body: (body) => {
-        body.innerHTML = `
-          <p style="color:var(--text-2);font-size:13px;margin-bottom:14px">
-            Заполни только те поля, которые хочешь показывать публично.
-          </p>
-          <div id="sl-fields"></div>
-          <div id="sl-error" class="form-error"></div>
-          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)">
-            <button class="btn btn-ghost" id="sl-cancel">${t("cancel")}</button>
-            <button class="btn btn-primary" id="sl-save">${t("save")}</button>
-          </div>`;
+        body.innerHTML = `<p style="color:var(--text-2);font-size:13px;margin-bottom:14px">Заполни только те поля, которые хочешь показывать публично.</p><div id="sl-fields"></div><div id="sl-error" class="form-error"></div><div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)"><button class="btn btn-ghost" id="sl-cancel">${t("cancel")}</button><button class="btn btn-primary" id="sl-save">${t("save")}</button></div>`;
         const holder = body.querySelector("#sl-fields");
         Object.entries(SOCIAL_META).forEach(([key, meta]) => {
           const row = document.createElement("div");
           row.className = "settings-row";
-          row.innerHTML = `
-            <div class="settings-row-info">
-              <div class="settings-row-label">${meta.icon} ${escapeHtml(meta.label)}</div>
-            </div>`;
+          row.innerHTML = `<div class="settings-row-info"><div class="settings-row-label">${meta.icon} ${escapeHtml(meta.label)}</div></div>`;
           const inp = document.createElement("input");
           inp.value = current[key] || "";
           inp.placeholder = meta.placeholder;
           inp.style.maxWidth = "280px";
+          inp.dataset.key = key;
           row.appendChild(inp);
           holder.appendChild(row);
-          inp.dataset.key = key;
         });
         body.querySelector("#sl-cancel").addEventListener("click", () => this.closeModal());
         body.querySelector("#sl-save").addEventListener("click", async () => {
-          const errEl = body.querySelector("#sl-error");
-          errEl.classList.remove("show");
+          const errEl = body.querySelector("#sl-error"); errEl.classList.remove("show");
           const out = {};
-          const inputs = holder.querySelectorAll("input[data-key]");
-          for (const inp of inputs) {
+          for (const inp of holder.querySelectorAll("input[data-key]")) {
             const v = inp.value.trim();
             if (!v) continue;
-            if (!/^https:\/\//i.test(v)) {
-              errEl.textContent = "Ссылки должны начинаться с https://";
-              errEl.classList.add("show");
-              return;
-            }
+            if (!/^https:\/\//i.test(v)) { errEl.textContent = "Ссылки должны начинаться с https://"; errEl.classList.add("show"); return; }
             out[inp.dataset.key] = v;
           }
-          try {
-            await this.updateProfile({ social_links: out });
-            this.profile.social_links = out;
-            toast("Ссылки сохранены", "success");
-            Sounds.success();
-            this.closeModal();
-          } catch (e) { errEl.textContent = e.message || "Ошибка"; errEl.classList.add("show"); }
+          try { await this.updateProfile({ social_links: out }); this.profile.social_links = out; toast("Ссылки сохранены", "success"); Sounds.success(); this.closeModal(); } catch (e) { errEl.textContent = e.message || "Ошибка"; errEl.classList.add("show"); }
+        });
+      },
+    });
+  }
+  openAboutEditor() {
+    this.openModal({
+      title: "О себе", narrow: true,
+      body: (body) => {
+        body.innerHTML = `<textarea id="about-input" rows="4" maxlength="300" placeholder="Пара слов о себе…">${escapeHtml(this.profile.about || "")}</textarea><div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)"><button class="btn btn-ghost" id="about-cancel">${t("cancel")}</button><button class="btn btn-primary" id="about-save">${t("save")}</button></div>`;
+        body.querySelector("#about-cancel").addEventListener("click", () => this.closeModal());
+        body.querySelector("#about-save").addEventListener("click", async () => {
+          const v = body.querySelector("#about-input").value.trim().slice(0, 300);
+          try { await this.updateProfile({ about: v }); this.profile.about = v; toast("Сохранено", "success"); Sounds.success(); this.closeModal(); } catch (e) { toast(e.message || "Ошибка", "error"); }
         });
       },
     });
@@ -4470,30 +4791,21 @@ class NEXORA {
     const themes = Object.entries(PROFILE_THEMES);
     const current = getProfileTheme();
     this.openModal({
-      title: t("profileTheme"),
-      narrow: true,
+      title: t("profileTheme"), narrow: true,
       body: (body) => {
-        body.innerHTML = `
-          <p style="color:var(--text-2);font-size:13px;margin-bottom:12px">
-            Тема применяется ко всему интерфейсу и сохраняется автоматически.
-          </p>
-          <div class="theme-grid" id="pt-grid"></div>`;
+        body.innerHTML = `<p style="color:var(--text-2);font-size:13px;margin-bottom:12px">Тема применяется ко всему интерфейсу и сохраняется автоматически.</p><div class="theme-grid" id="pt-grid"></div>`;
         const grid = body.querySelector("#pt-grid");
         themes.forEach(([id, th]) => {
           const tile = document.createElement("div");
           tile.className = "theme-tile";
           if (id === current) tile.classList.add("active");
           tile.style.background = th.vars["--bg-1"];
-          tile.innerHTML = `
-            <div class="tt-dot" style="background:${th.vars["--accent"]}"></div>
-            <div class="tt-body" style="background:${th.vars["--bg-2"]}; color:${th.vars["--text-0"]}">${escapeHtml(th.name)}</div>
-          `;
+          tile.innerHTML = `<div class="tt-dot" style="background:${th.vars["--accent"]}"></div><div class="tt-body" style="background:${th.vars["--bg-2"]}; color:${th.vars["--text-0"]}">${escapeHtml(th.name)}</div>`;
           tile.addEventListener("click", () => {
             applyProfileTheme(id);
             grid.querySelectorAll(".theme-tile").forEach(x => x.classList.remove("active"));
             tile.classList.add("active");
-            toast("Тема: " + th.name, "success");
-            Sounds.success();
+            toast("Тема: " + th.name, "success"); Sounds.success();
           });
           grid.appendChild(tile);
         });
@@ -4502,8 +4814,7 @@ class NEXORA {
   }
   openLanguageDialog() {
     this.openModal({
-      title: t("language"),
-      narrow: true,
+      title: t("language"), narrow: true,
       body: (body) => {
         body.innerHTML = `<div class="language-grid" id="lang-grid"></div>`;
         const grid = body.querySelector("#lang-grid");
@@ -4513,19 +4824,16 @@ class NEXORA {
           b.textContent = name;
           if (code === cur) b.classList.add("active");
           b.addEventListener("click", () => {
-            setLocale(code);
-            applyTranslations();
+            setLocale(code); applyTranslations();
             grid.querySelectorAll("button").forEach(x => x.classList.remove("active"));
             b.classList.add("active");
-            toast("Language: " + name, "success");
-            Sounds.success();
+            toast("Language: " + name, "success"); Sounds.success();
           });
           grid.appendChild(b);
         });
       },
     });
   }
-
   async openSessionsDialog() {
     let sessions = [];
     try {
@@ -4536,17 +4844,12 @@ class NEXORA {
       title: t("sessions"),
       body: (body) => {
         body.innerHTML = "";
-        if (!sessions.length) {
-          body.innerHTML = `<p class="muted">Нет данных о сессиях.</p>`;
-        } else {
+        if (!sessions.length) body.innerHTML = `<p class="muted">Нет данных о сессиях.</p>`;
+        else {
           sessions.forEach(s => {
             const row = document.createElement("div");
             row.className = "session-row";
-            row.innerHTML = `
-              <div class="session-info">
-                <div class="session-ua">${escapeHtml(s.user_agent || "Unknown device")}</div>
-                <div class="session-date">Последняя активность: ${escapeHtml(formatDateTime(s.updated_at))}</div>
-              </div>`;
+            row.innerHTML = `<div class="session-info"><div class="session-ua">${escapeHtml(s.user_agent || "Unknown device")}</div><div class="session-date">Последняя активность: ${escapeHtml(formatDateTime(s.updated_at))}</div></div>`;
             body.appendChild(row);
           });
         }
@@ -4554,8 +4857,7 @@ class NEXORA {
         note.style.cssText = "color:var(--text-3);font-size:12px;margin-top:14px";
         note.textContent = "«Выйти везде» завершит все сеансы, кроме текущего.";
         body.appendChild(note);
-        const f = this._openModal.footerEl;
-        f.innerHTML = "";
+        const f = this._openModal.footerEl; f.innerHTML = "";
         const close = document.createElement("button");
         close.className = "btn btn-ghost"; close.textContent = t("close");
         close.addEventListener("click", () => this.closeModal());
@@ -4563,13 +4865,7 @@ class NEXORA {
         revoke.className = "btn btn-danger"; revoke.textContent = "Выйти везде";
         revoke.addEventListener("click", async () => {
           if (!confirm("Завершить все сессии?")) return;
-          try {
-            const { error } = await supabase.rpc("revoke_all_sessions", { keep_token: null });
-            if (error) throw error;
-            toast("Все сессии завершены", "success");
-            Sounds.success();
-            this.closeModal();
-          } catch (e) { toast(e.message || "Ошибка", "error"); }
+          try { const { error } = await supabase.rpc("revoke_all_sessions", { keep_token: null }); if (error) throw error; toast("Все сессии завершены", "success"); Sounds.success(); this.closeModal(); } catch (e) { toast(e.message || "Ошибка", "error"); }
         });
         f.appendChild(close); f.appendChild(revoke);
       },
@@ -4578,23 +4874,16 @@ class NEXORA {
   async globalMessageSearch(q) {
     if (!q) return;
     try {
-      const { data, error } = await supabase.from("messages")
-        .select("id, chat_id, sender_id, content, created_at")
-        .textSearch("search_tsv", q, { type: "plain" })
-        .order("created_at", { ascending: false }).limit(50);
+      const { data, error } = await supabase.from("messages").select("id, chat_id, sender_id, content, created_at").textSearch("search_tsv", q, { type: "plain" }).order("created_at", { ascending: false }).limit(50);
       if (error) throw error;
       this.openModal({
-        title: t("searchMessages"),
-        wide: true,
+        title: t("searchMessages"), wide: true,
         body: (body) => {
           body.innerHTML = `<h4 style="color:var(--text-2);margin-bottom:12px">Найдено: ${data?.length || 0}</h4>`;
           (data || []).forEach(m => {
             const row = document.createElement("div");
             row.className = "settings-row"; row.style.cursor = "pointer";
-            row.innerHTML = `<div class="settings-row-info">
-              <div class="settings-row-label">${escapeHtml((m.content || "").slice(0, 100))}</div>
-              <div class="settings-row-desc">${escapeHtml(formatTime(m.created_at))}</div>
-            </div>`;
+            row.innerHTML = `<div class="settings-row-info"><div class="settings-row-label">${escapeHtml((m.content || "").slice(0, 100))}</div><div class="settings-row-desc">${escapeHtml(formatTime(m.created_at))}</div></div>`;
             row.addEventListener("click", () => { this.closeModal(); this.openChatById(m.chat_id); });
             body.appendChild(row);
           });
@@ -4603,99 +4892,55 @@ class NEXORA {
     } catch (e) { toast("Ошибка поиска", "error"); }
   }
 
-  /* ============================================================
-     PROFILE (self) — полностью переписано
-     ============================================================ */
+  /* PROFILE SELF */
   openProfile() {
     this.openModal({
-      title: t("profile"),
-      wide: true,
+      title: t("profile"), wide: true,
       body: (body) => {
         const me = this.profile;
         const status = me.status || "online";
         const socials = me.social_links || {};
         const socialKeys = Object.keys(socials);
-        const stats = { chats: this.chats.length, messages: 0 };
         body.innerHTML = "";
         const wrap = document.createElement("div");
         wrap.className = "profile-card";
-
         let coverHTML = `<div class="profile-cover"></div>`;
-        if (me.cover_url) {
-          coverHTML = `<div class="profile-cover with-image" style="background-image:url('${safeUrl(me.cover_url)}')"></div>`;
-        } else if (me.cover_preset) {
-          const clsMap = {
-            "gradient-1": "cover-gradient-1", "gradient-2": "cover-gradient-2",
-            "gradient-3": "cover-gradient-3", "gradient-4": "cover-gradient-4",
-            "gradient-5": "cover-gradient-5", "particles": "cover-gradient-1 particles",
-            "waves": "waves",
-          };
+        if (me.cover_url) coverHTML = `<div class="profile-cover with-image" style="background-image:url('${safeUrl(me.cover_url)}')"></div>`;
+        else if (me.cover_preset) {
+          const clsMap = { "gradient-1": "cover-gradient-1","gradient-2": "cover-gradient-2","gradient-3": "cover-gradient-3","gradient-4": "cover-gradient-4","gradient-5": "cover-gradient-5","particles": "cover-gradient-1 particles","waves": "waves" };
           const cls = clsMap[me.cover_preset] || "cover-gradient-1";
           coverHTML = `<div class="profile-cover preset ${cls}"></div>`;
         }
-
         wrap.innerHTML = `
           ${coverHTML}
-          <div class="profile-avatar-wrap">
-            ${avatarHTML(me, "xl", "profile-avatar-clickable")}
-          </div>
-          <div class="profile-name">
-            ${escapeHtml(me.username)}
-            ${me.badge_emoji ? `<span style="margin-left:8px">${escapeHtml(me.badge_emoji)}</span>` : ""}
-          </div>
+          <div class="profile-avatar-wrap">${avatarHTML(me, "xl", "profile-avatar-clickable")}</div>
+          <div class="profile-name">${escapeHtml(me.username)}${me.badge_emoji ? `<span style="margin-left:8px">${escapeHtml(me.badge_emoji)}</span>` : ""}</div>
           <div class="profile-nickname">${escapeHtml(me.username)}</div>
           <div class="profile-id-badge" id="profile-id">${escapeHtml(me.nexora_id)}</div>
-          <div class="profile-status">
-            <span><span class="dot" style="background:${STATUS_META[status]?.color || "#3ddc84"}"></span>
-              ${escapeHtml(STATUS_META[status]?.label || "В сети")}
-            </span>
-          </div>
+          <div class="profile-status"><span><span class="dot" style="background:${STATUS_META[status]?.color || "#3ddc84"}"></span>${escapeHtml(STATUS_META[status]?.label || "В сети")}</span></div>
           ${me.activity_text ? `<div class="activity-line">${escapeHtml(me.activity_text)}</div>` : ""}
-          ${me.about ? `
-            <div class="settings-section" style="margin-top:16px;background:var(--bg-2)">
-              <h3 style="margin-bottom:8px">${t("about")}</h3>
-              <div style="color:var(--text-1);font-size:13px;line-height:1.5">${escapeHtml(me.about)}</div>
-            </div>
-          ` : ""}`;
-
-        /* Соц-ссылки */
+          ${me.about ? `<div class="settings-section" style="margin-top:16px;background:var(--bg-2)"><h3 style="margin-bottom:8px">${t("about")}</h3><div style="color:var(--text-1);font-size:13px;line-height:1.5">${escapeHtml(me.about)}</div></div>` : ""}`;
         if (socialKeys.length) {
           const soc = document.createElement("div");
-          soc.className = "settings-section";
-          soc.style.marginTop = "16px";
-          soc.innerHTML = `<h3>Ссылки</h3>`;
-          const list = document.createElement("div");
-          list.className = "social-list";
+          soc.className = "settings-section"; soc.style.marginTop = "16px"; soc.innerHTML = `<h3>Ссылки</h3>`;
+          const list = document.createElement("div"); list.className = "social-list";
           socialKeys.forEach(k => {
-            const meta = SOCIAL_META[k];
-            if (!meta) return;
+            const meta = SOCIAL_META[k]; if (!meta) return;
             const a = document.createElement("a");
-            a.className = "social-item";
-            a.href = safeUrl(socials[k]);
+            a.className = "social-item"; a.href = safeUrl(socials[k]);
             a.target = "_blank"; a.rel = "noopener noreferrer nofollow";
             a.innerHTML = `<span class="social-icon" style="color:${meta.color}">${meta.icon}</span> ${escapeHtml(meta.label)}`;
             list.appendChild(a);
           });
-          soc.appendChild(list);
-          wrap.appendChild(soc);
+          soc.appendChild(list); wrap.appendChild(soc);
         }
-
         body.appendChild(wrap);
-        body.querySelector("#profile-id").addEventListener("click", () => {
-          navigator.clipboard.writeText(me.nexora_id);
-          toast("ID скопирован", "success");
-          Sounds.click();
-        });
-
-        /* Действия */
-        const actions = document.createElement("div");
-        actions.className = "profile-actions";
+        body.querySelector("#profile-id").addEventListener("click", () => { navigator.clipboard.writeText(me.nexora_id); toast("ID скопирован", "success"); Sounds.click(); });
+        const actions = document.createElement("div"); actions.className = "profile-actions";
         const mkBtn = (label, handler, ghost = false, full = false) => {
           const b = document.createElement("button");
           b.className = "btn " + (ghost ? "btn-ghost" : "btn-primary") + (full ? " btn-full" : "");
-          b.textContent = label;
-          b.addEventListener("click", handler);
-          actions.appendChild(b);
+          b.textContent = label; b.addEventListener("click", handler); actions.appendChild(b);
         };
         mkBtn("✎ Редактировать профиль", () => { this.closeModal(); this.openProfile(); }, false, true);
         mkBtn("📷 Сменить аватар", () => $("file-avatar").click(), true);
@@ -4706,41 +4951,12 @@ class NEXORA {
         mkBtn("✎ О себе", () => { this.closeModal(); setTimeout(() => this.openAboutEditor(), 100); }, true);
         mkBtn("📤 Поделиться ID", () => {
           const link = `${location.origin}${location.pathname}?u=${me.nexora_id}`;
-          navigator.clipboard.writeText(link).then(() => {
-            toast("Ссылка скопирована", "success");
-            Sounds.success();
-          });
+          navigator.clipboard.writeText(link).then(() => { toast("Ссылка скопирована", "success"); Sounds.success(); });
         }, true);
         wrap.appendChild(actions);
       },
     });
   }
-  openAboutEditor() {
-    this.openModal({
-      title: "О себе",
-      narrow: true,
-      body: (body) => {
-        body.innerHTML = `
-          <textarea id="about-input" rows="4" maxlength="300" placeholder="Пара слов о себе…">${escapeHtml(this.profile.about || "")}</textarea>
-          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)">
-            <button class="btn btn-ghost" id="about-cancel">${t("cancel")}</button>
-            <button class="btn btn-primary" id="about-save">${t("save")}</button>
-          </div>`;
-        body.querySelector("#about-cancel").addEventListener("click", () => this.closeModal());
-        body.querySelector("#about-save").addEventListener("click", async () => {
-          const v = body.querySelector("#about-input").value.trim().slice(0, 300);
-          try {
-            await this.updateProfile({ about: v });
-            this.profile.about = v;
-            toast("Сохранено", "success");
-            Sounds.success();
-            this.closeModal();
-          } catch (e) { toast(e.message || "Ошибка", "error"); }
-        });
-      },
-    });
-  }
-
   async openUserProfile(userId, peer = null) {
     this.openModal({
       title: t("profile"),
@@ -4751,11 +4967,7 @@ class NEXORA {
           const { data, error } = await supabase.rpc("get_user_card", { p_user_id: userId });
           if (error) throw error;
           card = Array.isArray(data) ? data[0] : data;
-        } catch (e) {
-          console.error(e);
-          body.innerHTML = `<div class="empty-state">Не удалось загрузить профиль</div>`;
-          return;
-        }
+        } catch (e) { console.error(e); body.innerHTML = `<div class="empty-state">Не удалось загрузить профиль</div>`; return; }
         if (!card) { body.innerHTML = `<div class="empty-state">Профиль не найден</div>`; return; }
         if (!card.avatar_url && peer?.avatar_url) card.avatar_url = peer.avatar_url;
         if (!card.about && peer?.about) card.about = peer.about;
@@ -4772,166 +4984,90 @@ class NEXORA {
         const createdStr = created ? created.toLocaleDateString(_locale(), { day: "numeric", month: "long", year: "numeric" }) : "";
         const socials = card.social_links || {};
         const socialKeys = Object.keys(socials);
-
         body.innerHTML = "";
-        const cardEl = document.createElement("div");
-        cardEl.className = "profile-card";
+        const cardEl = document.createElement("div"); cardEl.className = "profile-card";
         let coverHTML;
-        if (card.cover_url) {
-          coverHTML = `<div class="profile-cover with-image" style="background-image:url('${safeUrl(card.cover_url)}')"></div>`;
-        } else if (card.cover_preset) {
-          const clsMap = {
-            "gradient-1": "cover-gradient-1", "gradient-2": "cover-gradient-2",
-            "gradient-3": "cover-gradient-3", "gradient-4": "cover-gradient-4",
-            "gradient-5": "cover-gradient-5", "particles": "cover-gradient-1 particles",
-            "waves": "waves",
-          };
-          const cls = clsMap[card.cover_preset] || "cover-gradient-1";
-          coverHTML = `<div class="profile-cover preset ${cls}"></div>`;
-        } else {
-          coverHTML = `<div class="profile-cover"></div>`;
-        }
+        if (card.cover_url) coverHTML = `<div class="profile-cover with-image" style="background-image:url('${safeUrl(card.cover_url)}')"></div>`;
+        else if (card.cover_preset) {
+          const clsMap = { "gradient-1": "cover-gradient-1","gradient-2": "cover-gradient-2","gradient-3": "cover-gradient-3","gradient-4": "cover-gradient-4","gradient-5": "cover-gradient-5","particles": "cover-gradient-1 particles","waves": "waves" };
+          coverHTML = `<div class="profile-cover preset ${clsMap[card.cover_preset] || "cover-gradient-1"}"></div>`;
+        } else coverHTML = `<div class="profile-cover"></div>`;
         cardEl.innerHTML = `
           ${coverHTML}
-          <div class="profile-avatar-wrap">
-            ${avatarHTML(card, "xl", "profile-avatar-clickable")}
-          </div>
+          <div class="profile-avatar-wrap">${avatarHTML(card, "xl", "profile-avatar-clickable")}</div>
           <div class="profile-name">${escapeHtml(displayName)}${card.badge_emoji ? `<span style="margin-left:8px">${escapeHtml(card.badge_emoji)}</span>` : ""}${isBot ? ' <span class="bot-badge">[BOT]</span>' : ""}</div>
           ${card.nickname ? `<div class="profile-nickname">настоящий ник: @${escapeHtml(card.username)}</div>` : ""}
           <div class="profile-id-badge" id="card-id-copy">${escapeHtml(card.nexora_id)}</div>
-          <div class="profile-status">
-            <span><span class="dot" style="background:${STATUS_META[status]?.color || "#3ddc84"}"></span>
-              ${online ? (STATUS_META[status]?.label || t("online")) : (lastSeen ? t("wasOnline") + " " + lastSeen : t("offline"))}
-            </span>
-          </div>
+          <div class="profile-status"><span><span class="dot" style="background:${STATUS_META[status]?.color || "#3ddc84"}"></span>${online ? (STATUS_META[status]?.label || t("online")) : (lastSeen ? t("wasOnline") + " " + lastSeen : t("offline"))}</span></div>
           ${card.activity_text ? `<div class="activity-line">${escapeHtml(card.activity_text)}</div>` : ""}
-          ${card.about ? `
-            <div class="settings-section" style="margin-top:16px;background:var(--bg-2)">
-              <h3 style="margin-bottom:8px">${t("about")}</h3>
-              <div style="color:var(--text-1);font-size:13px;line-height:1.5">${escapeHtml(card.about)}</div>
-            </div>
-          ` : ""}`;
+          ${card.about ? `<div class="settings-section" style="margin-top:16px;background:var(--bg-2)"><h3 style="margin-bottom:8px">${t("about")}</h3><div style="color:var(--text-1);font-size:13px;line-height:1.5">${escapeHtml(card.about)}</div></div>` : ""}`;
         body.appendChild(cardEl);
-
         if (socialKeys.length) {
-          const soc = document.createElement("div");
-          soc.className = "settings-section";
-          soc.style.marginTop = "12px";
-          soc.innerHTML = `<h3>Ссылки</h3>`;
-          const list = document.createElement("div");
-          list.className = "social-list";
+          const soc = document.createElement("div"); soc.className = "settings-section"; soc.style.marginTop = "12px"; soc.innerHTML = `<h3>Ссылки</h3>`;
+          const list = document.createElement("div"); list.className = "social-list";
           socialKeys.forEach(k => {
-            const meta = SOCIAL_META[k];
-            if (!meta) return;
+            const meta = SOCIAL_META[k]; if (!meta) return;
             const a = document.createElement("a");
-            a.className = "social-item";
-            a.href = safeUrl(socials[k]);
-            a.target = "_blank"; a.rel = "noopener noreferrer nofollow";
+            a.className = "social-item"; a.href = safeUrl(socials[k]); a.target = "_blank"; a.rel = "noopener noreferrer nofollow";
             a.innerHTML = `<span class="social-icon" style="color:${meta.color}">${meta.icon}</span> ${escapeHtml(meta.label)}`;
             list.appendChild(a);
           });
-          soc.appendChild(list);
-          cardEl.appendChild(soc);
+          soc.appendChild(list); cardEl.appendChild(soc);
         }
-
-        cardEl.querySelector("#card-id-copy").addEventListener("click", () => {
-          navigator.clipboard.writeText(card.nexora_id);
-          toast("ID скопирован", "success");
-          Sounds.click();
-        });
+        cardEl.querySelector("#card-id-copy").addEventListener("click", () => { navigator.clipboard.writeText(card.nexora_id); toast("ID скопирован", "success"); Sounds.click(); });
         const av = cardEl.querySelector(".profile-avatar-clickable");
         if (av && card.avatar_url) av.addEventListener("click", () => this.openLightbox(card.avatar_url, "image"));
-
-        const actions = document.createElement("div");
-        actions.className = "profile-actions";
+        const actions = document.createElement("div"); actions.className = "profile-actions";
         if (isSelf) {
           const edit = document.createElement("button");
-          edit.className = "btn btn-primary btn-full";
-          edit.textContent = "✎ " + t("editProfile");
+          edit.className = "btn btn-primary btn-full"; edit.textContent = "✎ " + t("editProfile");
           edit.addEventListener("click", () => { this.closeModal(); this.openProfile(); });
           actions.appendChild(edit);
         } else {
           const msg = document.createElement("button");
-          msg.className = "btn btn-primary btn-full";
-          msg.textContent = "💬 " + t("writeMessage2");
+          msg.className = "btn btn-primary btn-full"; msg.textContent = "💬 " + t("writeMessage2");
           msg.addEventListener("click", () => { this.closeModal(); this.openDirectChat(card); });
           actions.appendChild(msg);
           const renameBtn = document.createElement("button");
           renameBtn.className = "btn btn-ghost";
-          renameBtn.textContent = card.is_contact
-            ? (card.nickname ? "✎ " + t("renameShort") : "✎ " + t("rename"))
-            : "+ " + t("addToContacts");
+          renameBtn.textContent = card.is_contact ? (card.nickname ? "✎ " + t("renameShort") : "✎ " + t("rename")) : "+ " + t("addToContacts");
           renameBtn.addEventListener("click", () => {
-            if (card.is_contact) {
-              this.closeModal();
-              this.openRenameContactDialog(card);
-            } else {
-              this.addContact(card.id).then(async () => {
-                await this.refreshContacts();
-                toast("Добавлен в контакты", "success");
-                Sounds.success();
-                this.closeModal();
-                this.openUserProfile(card.id, card);
-              }).catch(e => toast(e.message || "Ошибка", "error"));
-            }
+            if (card.is_contact) { this.closeModal(); this.openRenameContactDialog(card); }
+            else { this.addContact(card.id).then(async () => { await this.refreshContacts(); toast("Добавлен в контакты", "success"); Sounds.success(); this.closeModal(); this.openUserProfile(card.id, card); }).catch(e => toast(e.message || "Ошибка", "error")); }
           });
           actions.appendChild(renameBtn);
           if (card.is_contact) {
             const rm = document.createElement("button");
-            rm.className = "btn btn-ghost";
-            rm.textContent = "🗑 " + t("removeFromContacts");
+            rm.className = "btn btn-ghost"; rm.textContent = "🗑 " + t("removeFromContacts");
             rm.addEventListener("click", async () => {
               if (!confirm(`Удалить @${card.username}?`)) return;
-              try {
-                await supabase.rpc("remove_contact", { p_contact_id: card.id });
-                await this.refreshContacts();
-                toast("Удалён", "warning");
-                Sounds.click();
-                this.closeModal();
-                this.openUserProfile(card.id, card);
-              } catch (e) { toast(e.message || "Ошибка", "error"); }
+              try { await supabase.rpc("remove_contact", { p_contact_id: card.id }); await this.refreshContacts(); toast("Удалён", "warning"); Sounds.click(); this.closeModal(); this.openUserProfile(card.id, card); } catch (e) { toast(e.message || "Ошибка", "error"); }
             });
             actions.appendChild(rm);
           }
           const block = document.createElement("button");
           if (card.is_blocked) {
-            block.className = "btn btn-ghost btn-full";
-            block.textContent = "✓ " + t("unblock");
+            block.className = "btn btn-ghost btn-full"; block.textContent = "✓ " + t("unblock");
             block.addEventListener("click", async () => {
               if (!confirm("Разблокировать?")) return;
-              try {
-                await supabase.rpc("unblock_user", { p_user_id: card.id });
-                toast("Разблокирован", "success");
-                Sounds.success();
-                this.closeModal();
-                this.openUserProfile(card.id, card);
-              } catch (e) { toast(e.message || "Ошибка", "error"); }
+              try { await supabase.rpc("unblock_user", { p_user_id: card.id }); toast("Разблокирован", "success"); Sounds.success(); this.closeModal(); this.openUserProfile(card.id, card); } catch (e) { toast(e.message || "Ошибка", "error"); }
             });
           } else {
-            block.className = "btn btn-danger";
-            block.textContent = "🚫 " + t("block");
+            block.className = "btn btn-danger"; block.textContent = "🚫 " + t("block");
             block.addEventListener("click", async () => {
               if (!confirm("Заблокировать?")) return;
-              try {
-                await this.blockUser(card.id);
-                toast("Заблокирован", "warning");
-                Sounds.error();
-                this.closeModal();
-                this.openUserProfile(card.id, card);
-              } catch (e) { toast(e.message || "Ошибка", "error"); }
+              try { await this.blockUser(card.id); toast("Заблокирован", "warning"); Sounds.error(); this.closeModal(); this.openUserProfile(card.id, card); } catch (e) { toast(e.message || "Ошибка", "error"); }
             });
           }
           actions.appendChild(block);
           const report = document.createElement("button");
-          report.className = "btn btn-ghost btn-full";
-          report.textContent = "⚠ " + t("report");
+          report.className = "btn btn-ghost btn-full"; report.textContent = "⚠ " + t("report");
           report.addEventListener("click", () => { this.closeModal(); this.openReportDialog(card); });
           actions.appendChild(report);
           if (isBot) {
             actions.innerHTML = "";
             const msgBot = document.createElement("button");
-            msgBot.className = "btn btn-primary btn-full";
-            msgBot.textContent = "💬 Открыть чат с ботом";
+            msgBot.className = "btn btn-primary btn-full"; msgBot.textContent = "💬 Открыть чат с ботом";
             msgBot.addEventListener("click", () => { this.closeModal(); this.openDirectChat(card); });
             actions.appendChild(msgBot);
           }
@@ -4942,40 +5078,20 @@ class NEXORA {
   }
   openRenameContactDialog(card) {
     this.openModal({
-      title: "Ярлык контакта",
-      narrow: true,
+      title: "Ярлык контакта", narrow: true,
       body: (body) => {
-        body.innerHTML = `
-          <p style="color:var(--text-2);font-size:13px;margin-bottom:10px">
-            Как показывать <b>@${escapeHtml(card.username)}</b>.
-          </p>
-          <input id="rn-input" maxlength="40" value="${escapeHtml(card.nickname || card.username)}">
-          <div id="rn-error" class="form-error"></div>
-          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)">
-            <button class="btn btn-ghost" id="rn-cancel">${t("cancel")}</button>
-            <button class="btn btn-primary" id="rn-save">${t("save")}</button>
-          </div>`;
+        body.innerHTML = `<p style="color:var(--text-2);font-size:13px;margin-bottom:10px">Как показывать <b>@${escapeHtml(card.username)}</b>.</p><input id="rn-input" maxlength="40" value="${escapeHtml(card.nickname || card.username)}"><div id="rn-error" class="form-error"></div><div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)"><button class="btn btn-ghost" id="rn-cancel">${t("cancel")}</button><button class="btn btn-primary" id="rn-save">${t("save")}</button></div>`;
         const inp = body.querySelector("#rn-input");
         setTimeout(() => { inp.focus(); inp.select(); }, 100);
         body.querySelector("#rn-cancel").addEventListener("click", () => this.closeModal());
         body.querySelector("#rn-save").addEventListener("click", async () => {
-          const v = inp.value.trim();
-          if (!v) return toast("Введи имя", "warning");
+          const v = inp.value.trim(); if (!v) return toast("Введи имя", "warning");
           try {
-            const { error } = await supabase.rpc("set_contact_nickname", {
-              p_contact_id: card.id, p_nickname: v,
-            });
+            const { error } = await supabase.rpc("set_contact_nickname", { p_contact_id: card.id, p_nickname: v });
             if (error) throw error;
-            toast("Сохранено", "success");
-            Sounds.success();
-            this.closeModal();
-            await this.refreshChats();
-            await this.refreshContacts();
-          } catch (e) {
-            const err = body.querySelector("#rn-error");
-            err.textContent = e.message || "Ошибка";
-            err.classList.add("show");
-          }
+            toast("Сохранено", "success"); Sounds.success(); this.closeModal();
+            await this.refreshChats(); await this.refreshContacts();
+          } catch (e) { const err = body.querySelector("#rn-error"); err.textContent = e.message || "Ошибка"; err.classList.add("show"); }
         });
       },
     });
@@ -4983,54 +5099,32 @@ class NEXORA {
   openReportDialog(card) {
     const reasons = ["Спам", "Оскорбления", "Мошенничество", "Порнография", "Другое"];
     this.openModal({
-      title: `Жалоба на @${card.username}`,
-      narrow: true,
+      title: `Жалоба на @${card.username}`, narrow: true,
       body: (body) => {
-        body.innerHTML = `
-          <p style="color:var(--text-2);font-size:13px;margin-bottom:10px">Выбери причину:</p>
-          <div id="rp-reasons" style="display:flex;flex-direction:column;gap:6px"></div>
-          <div class="form-group" style="margin-top:14px">
-            <label>Комментарий</label>
-            <textarea id="rp-comment" rows="3" maxlength="500"></textarea>
-          </div>
-          <div id="rp-error" class="form-error"></div>
-          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)">
-            <button class="btn btn-ghost" id="rp-cancel">${t("cancel")}</button>
-            <button class="btn btn-primary" id="rp-send">Отправить</button>
-          </div>`;
+        body.innerHTML = `<p style="color:var(--text-2);font-size:13px;margin-bottom:10px">Выбери причину:</p><div id="rp-reasons" style="display:flex;flex-direction:column;gap:6px"></div><div class="form-group" style="margin-top:14px"><label>Комментарий</label><textarea id="rp-comment" rows="3" maxlength="500"></textarea></div><div id="rp-error" class="form-error"></div><div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)"><button class="btn btn-ghost" id="rp-cancel">${t("cancel")}</button><button class="btn btn-primary" id="rp-send">Отправить</button></div>`;
         let picked = reasons[0];
         const holder = body.querySelector("#rp-reasons");
         reasons.forEach(r => {
           const b = document.createElement("button");
           b.className = "btn " + (r === picked ? "btn-primary" : "btn-ghost");
           b.textContent = r; b.style.justifyContent = "flex-start";
-          b.addEventListener("click", () => {
-            picked = r;
-            holder.querySelectorAll("button").forEach(x => x.className = "btn btn-ghost");
-            b.className = "btn btn-primary";
-          });
+          b.addEventListener("click", () => { picked = r; holder.querySelectorAll("button").forEach(x => x.className = "btn btn-ghost"); b.className = "btn btn-primary"; });
           holder.appendChild(b);
         });
         body.querySelector("#rp-cancel").addEventListener("click", () => this.closeModal());
         body.querySelector("#rp-send").addEventListener("click", async () => {
           const comment = body.querySelector("#rp-comment").value.trim();
           try {
-            const { error } = await supabase.from("reports").insert({
-              reporter_id: this.user.id, reported_id: card.id, reason: picked, comment,
-            });
+            const { error } = await supabase.from("reports").insert({ reporter_id: this.user.id, reported_id: card.id, reason: picked, comment });
             if (error) throw error;
-            toast("Жалоба отправлена", "success");
-            Sounds.success();
-            this.closeModal();
+            toast("Жалоба отправлена", "success"); Sounds.success(); this.closeModal();
           } catch (e) { toast(e.message || "Ошибка", "error"); }
         });
       },
     });
   }
 
-  /* ============================================================
-     CHAT INFO
-     ============================================================ */
+  /* CHAT INFO */
   openChatInfo() {
     if (!this.activeChat) return;
     const ctype = this.activeChat.type || "direct";
@@ -5050,35 +5144,17 @@ class NEXORA {
     this.openModal({
       title: "О канале",
       body: (body) => {
-        body.innerHTML = `
-          <div class="profile-hero">
-            <div class="avatar avatar-lg">${ICONS.channel}</div>
-            <div class="profile-hero-name">${escapeHtml(chat.title || "")}</div>
-            <div class="profile-id-badge">${chat.username ? "@" + escapeHtml(chat.username) : "приватный"}</div>
-          </div>
-          <div class="settings-section">
-            <h3>Информация</h3>
-            <div style="color:var(--text-2);font-size:13px">Подписчиков: ${chat.members_count || 0}</div>
-            ${chat.description ? `<div style="color:var(--text-2);font-size:13px;margin-top:8px">${escapeHtml(chat.description)}</div>` : ""}
-          </div>`;
+        body.innerHTML = `<div class="profile-hero"><div class="avatar avatar-lg">${ICONS.channel}</div><div class="profile-hero-name">${escapeHtml(chat.title || "")}</div><div class="profile-id-badge">${chat.username ? "@" + escapeHtml(chat.username) : "приватный"}</div></div><div class="settings-section"><h3>Информация</h3><div style="color:var(--text-2);font-size:13px">Подписчиков: ${chat.members_count || 0}</div>${chat.description ? `<div style="color:var(--text-2);font-size:13px;margin-top:8px">${escapeHtml(chat.description)}</div>` : ""}</div>`;
         const shareBtn = document.createElement("button");
-        shareBtn.className = "btn btn-ghost btn-block";
-        shareBtn.textContent = "🔗 " + t("copyLink");
+        shareBtn.className = "btn btn-ghost btn-block"; shareBtn.textContent = "🔗 " + t("copyLink");
         shareBtn.addEventListener("click", () => { this.closeModal(); setTimeout(() => this.openChannelShare(chat), 100); });
         body.appendChild(shareBtn);
         const leave = document.createElement("button");
-        leave.className = "btn btn-danger btn-block";
-        leave.style.marginTop = "10px";
-        leave.textContent = "Отписаться";
+        leave.className = "btn btn-danger btn-block"; leave.style.marginTop = "10px"; leave.textContent = "Отписаться";
         leave.addEventListener("click", async () => {
           if (!confirm("Отписаться?")) return;
           await supabase.from("chat_members").delete().eq("chat_id", chat.id).eq("user_id", this.user.id);
-          this.closeModal();
-          $("chat-view").classList.add("hidden");
-          $("welcome").classList.remove("hidden");
-          this.activeChat = null;
-          await this.refreshChats();
-          toast("Отписались", "warning");
+          this.closeModal(); $("chat-view").classList.add("hidden"); $("welcome").classList.remove("hidden"); this.activeChat = null; await this.refreshChats(); toast("Отписались", "warning");
         });
         body.appendChild(leave);
       },
@@ -5088,171 +5164,86 @@ class NEXORA {
     this.openModal({
       title: "О группе",
       body: (body) => {
-        body.innerHTML = `
-          <div class="profile-hero">
-            <div class="avatar avatar-lg">${ICONS.group}</div>
-            <div class="profile-hero-name">${escapeHtml(chat.title || "")}</div>
-            <div class="profile-id-badge">${chat.username ? "@" + escapeHtml(chat.username) : "приватная"}</div>
-          </div>
-          <div class="settings-section">
-            <h3>Информация</h3>
-            <div style="color:var(--text-2);font-size:13px">Участников: ${chat.members_count || 0}</div>
-          </div>`;
+        body.innerHTML = `<div class="profile-hero"><div class="avatar avatar-lg">${ICONS.group}</div><div class="profile-hero-name">${escapeHtml(chat.title || "")}</div><div class="profile-id-badge">${chat.username ? "@" + escapeHtml(chat.username) : "приватная"}</div></div><div class="settings-section"><h3>Информация</h3><div style="color:var(--text-2);font-size:13px">Участников: ${chat.members_count || 0}</div></div>`;
         const shareBtn = document.createElement("button");
-        shareBtn.className = "btn btn-ghost btn-block";
-        shareBtn.textContent = "🔗 " + t("copyLink");
+        shareBtn.className = "btn btn-ghost btn-block"; shareBtn.textContent = "🔗 " + t("copyLink");
         shareBtn.addEventListener("click", () => { this.closeModal(); setTimeout(() => this.openChannelShare(chat), 100); });
         body.appendChild(shareBtn);
         const leave = document.createElement("button");
-        leave.className = "btn btn-danger btn-block";
-        leave.style.marginTop = "10px";
-        leave.textContent = "Покинуть группу";
+        leave.className = "btn btn-danger btn-block"; leave.style.marginTop = "10px"; leave.textContent = "Покинуть группу";
         leave.addEventListener("click", async () => {
           if (!confirm("Покинуть?")) return;
           await supabase.from("chat_members").delete().eq("chat_id", chat.id).eq("user_id", this.user.id);
-          this.closeModal();
-          $("chat-view").classList.add("hidden");
-          $("welcome").classList.remove("hidden");
-          this.activeChat = null;
-          await this.refreshChats();
-          toast("Покинули", "warning");
+          this.closeModal(); $("chat-view").classList.add("hidden"); $("welcome").classList.remove("hidden"); this.activeChat = null; await this.refreshChats(); toast("Покинули", "warning");
         });
         body.appendChild(leave);
       },
     });
   }
 
-  /* ============================================================
-     ACCOUNT ACTIONS
-     ============================================================ */
+  /* ACCOUNT ACTIONS */
   async changeUsername() {
     const v = prompt("Новый username (3–24):", this.profile.username);
     if (!v) return;
     if (!/^[a-zA-Z0-9_]{3,24}$/.test(v)) return toast("3–24 символа", "warning");
-    try {
-      await this.updateProfile({ username: v });
-      this.renderSidebarFooter();
-      toast("Username обновлён", "success");
-      Sounds.success();
-    } catch (e) { toast(e.message || "Ошибка", "error"); }
+    try { await this.updateProfile({ username: v }); this.renderSidebarFooter(); toast("Username обновлён", "success"); Sounds.success(); } catch (e) { toast(e.message || "Ошибка", "error"); }
   }
   async changePassword() {
     const p = prompt("Новый пароль (мин. 8):");
     if (!p) return;
     if (p.length < 8) return toast("Минимум 8 символов", "warning");
-    try {
-      const { error } = await supabase.auth.updateUser({ password: p });
-      if (error) throw error;
-      toast("Пароль изменён", "success");
-      Sounds.success();
-    } catch (e) { toast(e.message || "Ошибка", "error"); }
+    try { const { error } = await supabase.auth.updateUser({ password: p }); if (error) throw error; toast("Пароль изменён", "success"); Sounds.success(); } catch (e) { toast(e.message || "Ошибка", "error"); }
   }
   async toggle2FA() {
     try {
       const { data: factors } = await supabase.auth.mfa.listFactors();
       const totp = (factors?.totp || []).find(f => f.status === "verified");
-      if (totp) {
-        if (!confirm("Отключить 2FA?")) return;
-        await supabase.auth.mfa.unenroll({ factorId: totp.id });
-        toast("2FA отключена", "warning");
-        return;
-      }
-      const { data: enroll, error } = await supabase.auth.mfa.enroll({
-        factorType: "totp", friendlyName: "NEXORA TOTP",
-      });
+      if (totp) { if (!confirm("Отключить 2FA?")) return; await supabase.auth.mfa.unenroll({ factorId: totp.id }); toast("2FA отключена", "warning"); return; }
+      const { data: enroll, error } = await supabase.auth.mfa.enroll({ factorType: "totp", friendlyName: "NEXORA TOTP" });
       if (error) throw error;
-      this.closeModal();
-      setTimeout(() => this.openTotpModal(enroll), 100);
+      this.closeModal(); setTimeout(() => this.openTotpModal(enroll), 100);
     } catch (e) { toast(e.message || "Ошибка 2FA", "error"); }
   }
   openTotpModal(enroll) {
     this.openModal({
-      title: "Включение 2FA",
-      narrow: true,
+      title: "Включение 2FA", narrow: true,
       body: (body) => {
-        body.innerHTML = `
-          <p style="color:var(--text-2);font-size:13px;margin-bottom:12px">
-            Отсканируй QR в Google Authenticator.
-          </p>
-          <div id="qr-holder" style="background:#fff;padding:12px;border-radius:10px;text-align:center"></div>
-          <p style="font-size:12px;color:var(--text-3);margin:12px 0 6px">Секрет:</p>
-          <code style="background:var(--bg-2);padding:8px 12px;border-radius:6px;font-size:12px;display:block;word-break:break-all">${escapeHtml(enroll.totp.secret)}</code>
-          <input id="totp-code" class="mfa-input" maxlength="6" inputmode="numeric" placeholder="000000" style="margin-top:14px">
-          <div id="totp-error" class="form-error" style="margin-top:10px"></div>
-          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)">
-            <button class="btn btn-ghost" id="totp-cancel">${t("cancel")}</button>
-            <button class="btn btn-primary" id="totp-verify">${t("verify")}</button>
-          </div>`;
+        body.innerHTML = `<p style="color:var(--text-2);font-size:13px;margin-bottom:12px">Отсканируй QR в Google Authenticator.</p><div id="qr-holder" style="background:#fff;padding:12px;border-radius:10px;text-align:center"></div><p style="font-size:12px;color:var(--text-3);margin:12px 0 6px">Секрет:</p><code style="background:var(--bg-2);padding:8px 12px;border-radius:6px;font-size:12px;display:block;word-break:break-all">${escapeHtml(enroll.totp.secret)}</code><input id="totp-code" class="mfa-input" maxlength="6" inputmode="numeric" placeholder="000000" style="margin-top:14px"><div id="totp-error" class="form-error" style="margin-top:10px"></div><div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)"><button class="btn btn-ghost" id="totp-cancel">${t("cancel")}</button><button class="btn btn-primary" id="totp-verify">${t("verify")}</button></div>`;
         const holder = body.querySelector("#qr-holder");
         const qr = enroll.totp.qr_code;
-        if (typeof qr === "string" && qr.startsWith("data:")) {
-          const img = document.createElement("img"); img.src = qr; img.style.maxWidth = "200px"; holder.appendChild(img);
-        } else if (typeof qr === "string" && qr.startsWith("<svg")) {
-          holder.innerHTML = qr;
-        } else {
-          holder.textContent = "QR недоступен, используй секрет";
-        }
+        if (typeof qr === "string" && qr.startsWith("data:")) { const img = document.createElement("img"); img.src = qr; img.style.maxWidth = "200px"; holder.appendChild(img); }
+        else if (typeof qr === "string" && qr.startsWith("<svg")) holder.innerHTML = qr;
+        else holder.textContent = "QR недоступен, используй секрет";
         body.querySelector("#totp-cancel").addEventListener("click", () => this.closeModal());
         body.querySelector("#totp-verify").addEventListener("click", async () => {
           const code = body.querySelector("#totp-code").value.trim();
-          const errEl = body.querySelector("#totp-error");
-          errEl.classList.remove("show");
+          const errEl = body.querySelector("#totp-error"); errEl.classList.remove("show");
           if (!/^\d{6}$/.test(code)) { errEl.textContent = "Введи 6 цифр"; errEl.classList.add("show"); return; }
           try {
             const { data: ch, error: cErr } = await supabase.auth.mfa.challenge({ factorId: enroll.id });
             if (cErr) throw cErr;
-            const { error } = await supabase.auth.mfa.verify({
-              factorId: enroll.id, challengeId: ch.id, code,
-            });
+            const { error } = await supabase.auth.mfa.verify({ factorId: enroll.id, challengeId: ch.id, code });
             if (error) throw error;
-            toast("2FA включена", "success");
-            Sounds.success();
-            this.closeModal();
+            toast("2FA включена", "success"); Sounds.success(); this.closeModal();
           } catch (e) { errEl.textContent = e.message || "Неверный код"; errEl.classList.add("show"); }
         });
       },
     });
   }
 
-  /* ============================================================
-     NEW CHAT / GROUP / CHANNEL
-     ============================================================ */
+  /* NEW CHAT / GROUP / CHANNEL */
   openNewChatDialog(presetType = "group") {
     this.openModal({
       title: "Новый чат",
       body: (body) => {
         let chatType = presetType;
         body.innerHTML = `
-          <div class="settings-section">
-            <h3>${t("type")}</h3>
-            <div id="nc-type" style="display:flex;gap:8px"></div>
-          </div>
-          <div class="settings-section">
-            <h3>${t("name")}</h3>
-            <input id="nc-title" maxlength="80" placeholder="${t("name")}">
-            <input id="nc-desc" maxlength="200" placeholder="${t("description")}" style="margin-top:10px">
-          </div>
-          <div class="settings-section" id="nc-privacy-block">
-            <h3>Публичность</h3>
-            <div id="nc-public" style="display:flex;gap:8px"></div>
-            <div id="nc-username-wrap" style="margin-top:10px;display:none">
-              <label style="font-size:11px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:1px">${t("username")}</label>
-              <div class="input-prefix" style="margin-top:6px">
-                <span class="prefix">@</span>
-                <input id="nc-username" maxlength="32" placeholder="my_channel">
-              </div>
-              <small style="display:block;margin-top:6px;color:var(--text-3);font-size:11px">5–32 символа, латиница, цифры, _.</small>
-            </div>
-          </div>
-          <div class="settings-section">
-            <h3>${t("participants")}</h3>
-            <div id="nc-members"></div>
-          </div>
+          <div class="settings-section"><h3>${t("type")}</h3><div id="nc-type" style="display:flex;gap:8px"></div></div>
+          <div class="settings-section"><h3>${t("name")}</h3><input id="nc-title" maxlength="80" placeholder="${t("name")}"><input id="nc-desc" maxlength="200" placeholder="${t("description")}" style="margin-top:10px"></div>
+          <div class="settings-section" id="nc-privacy-block"><h3>Публичность</h3><div id="nc-public" style="display:flex;gap:8px"></div><div id="nc-username-wrap" style="margin-top:10px;display:none"><label style="font-size:11px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:1px">${t("username")}</label><div class="input-prefix" style="margin-top:6px"><span class="prefix">@</span><input id="nc-username" maxlength="32" placeholder="my_channel"></div></div></div>
+          <div class="settings-section"><h3>${t("participants")}</h3><div id="nc-members"></div></div>
           <div id="nc-error" class="form-error"></div>
-          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)">
-            <button class="btn btn-ghost" id="nc-cancel">${t("cancel")}</button>
-            <button class="btn btn-primary" id="nc-create">${t("create")}</button>
-          </div>`;
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)"><button class="btn btn-ghost" id="nc-cancel">${t("cancel")}</button><button class="btn btn-primary" id="nc-create">${t("create")}</button></div>`;
         const typeBox = body.querySelector("#nc-type");
         const privacyBlock = body.querySelector("#nc-privacy-block");
         let pickedPublic = true;
@@ -5271,12 +5262,7 @@ class NEXORA {
         });
         const pubBox = body.querySelector("#nc-public");
         const unameWrap = body.querySelector("#nc-username-wrap");
-        const setPublic = (pub) => {
-          pickedPublic = pub;
-          pubBox.querySelectorAll("button").forEach(x => x.className = "btn btn-ghost");
-          pubBox.children[pub ? 0 : 1].className = "btn btn-primary";
-          unameWrap.style.display = pub ? "block" : "none";
-        };
+        const setPublic = (pub) => { pickedPublic = pub; pubBox.querySelectorAll("button").forEach(x => x.className = "btn btn-ghost"); pubBox.children[pub ? 0 : 1].className = "btn btn-primary"; unameWrap.style.display = pub ? "block" : "none"; };
         [t("public"), t("private")].forEach((label, i) => {
           const b = document.createElement("button");
           b.className = "btn " + (i === 0 ? "btn-primary" : "btn-ghost");
@@ -5284,13 +5270,11 @@ class NEXORA {
           b.addEventListener("click", () => setPublic(i === 0));
           pubBox.appendChild(b);
         });
-        setType(chatType);
-        setPublic(true);
+        setType(chatType); setPublic(true);
         const membersBox = body.querySelector("#nc-members");
         const checks = [];
-        if (!this.contacts.length) {
-          membersBox.innerHTML = `<p class="muted">Нет контактов</p>`;
-        } else {
+        if (!this.contacts.length) membersBox.innerHTML = `<p class="muted">Нет контактов</p>`;
+        else {
           this.contacts.forEach(c => {
             const row = document.createElement("label");
             row.style.cssText = "display:flex;align-items:center;gap:10px;padding:8px 0;cursor:pointer";
@@ -5306,8 +5290,7 @@ class NEXORA {
         }
         body.querySelector("#nc-cancel").addEventListener("click", () => this.closeModal());
         body.querySelector("#nc-create").addEventListener("click", async () => {
-          const errEl = body.querySelector("#nc-error");
-          errEl.classList.remove("show");
+          const errEl = body.querySelector("#nc-error"); errEl.classList.remove("show");
           const title = body.querySelector("#nc-title").value.trim();
           if (!title) { errEl.textContent = "Введи название"; errEl.classList.add("show"); return; }
           const ids = checks.filter(c => c.checked).map(c => c.value);
@@ -5316,36 +5299,21 @@ class NEXORA {
             let chatId;
             if (chatType === "channel") {
               const uname = pickedPublic ? body.querySelector("#nc-username").value.trim().toLowerCase() : null;
-              if (pickedPublic && !/^[a-z][a-z0-9_]{4,31}$/.test(uname || "")) {
-                errEl.textContent = "Username: 5–32, начинается с буквы"; errEl.classList.add("show"); return;
-              }
-              const { data, error } = await supabase.rpc("create_channel", {
-                p_title: title, p_description: desc, p_member_ids: ids,
-                p_is_public: pickedPublic, p_username: uname,
-              });
+              if (pickedPublic && !/^[a-z][a-z0-9_]{4,31}$/.test(uname || "")) { errEl.textContent = "Username: 5–32, начинается с буквы"; errEl.classList.add("show"); return; }
+              const { data, error } = await supabase.rpc("create_channel", { p_title: title, p_description: desc, p_member_ids: ids, p_is_public: pickedPublic, p_username: uname });
               if (error) throw error;
               chatId = data;
             } else {
-              const { data, error } = await supabase.rpc("create_group_chat", {
-                p_title: title, p_member_ids: ids, p_type: "group", p_description: desc,
-              });
+              const { data, error } = await supabase.rpc("create_group_chat", { p_title: title, p_member_ids: ids, p_type: "group", p_description: desc });
               if (error) throw error;
               chatId = data;
               const uname = pickedPublic ? body.querySelector("#nc-username").value.trim().toLowerCase() : null;
               if (pickedPublic && /^[a-z][a-z0-9_]{4,31}$/.test(uname || "")) {
-                try {
-                  await supabase.rpc("update_group_settings", {
-                    p_chat_id: chatId, p_title: title, p_description: desc,
-                    p_is_public: pickedPublic, p_username: uname,
-                  });
-                } catch (_) {}
+                try { await supabase.rpc("update_group_settings", { p_chat_id: chatId, p_title: title, p_description: desc, p_is_public: pickedPublic, p_username: uname }); } catch (_) {}
               }
             }
-            toast(chatType === "channel" ? "Канал создан" : "Группа создана", "success");
-            Sounds.success();
-            this.closeModal();
-            await this.refreshChats();
-            await this.openChatById(chatId);
+            toast(chatType === "channel" ? "Канал создан" : "Группа создана", "success"); Sounds.success();
+            this.closeModal(); await this.refreshChats(); await this.openChatById(chatId);
           } catch (e) { errEl.textContent = e.message || "Ошибка"; errEl.classList.add("show"); }
         });
       },
@@ -5355,43 +5323,25 @@ class NEXORA {
     const existing = new Set(this.members.map(m => m.user_id));
     const candidates = this.contacts.filter(c => !existing.has(c.id));
     this.openModal({
-      title: "Пригласить",
-      narrow: true,
+      title: "Пригласить", narrow: true,
       body: (body) => {
-        if (!candidates.length) {
-          body.innerHTML = `<p class="muted">Все контакты уже в чате</p>`;
-          return;
-        }
+        if (!candidates.length) { body.innerHTML = `<p class="muted">Все контакты уже в чате</p>`; return; }
         candidates.forEach(c => {
           const row = document.createElement("div");
           row.className = "settings-row";
-          row.innerHTML = `<div class="settings-row-info">
-            <div class="settings-row-label">${escapeHtml(c.nickname || c.username)}</div>
-            <div class="settings-row-desc">${escapeHtml(c.nexora_id)}</div>
-          </div>`;
+          row.innerHTML = `<div class="settings-row-info"><div class="settings-row-label">${escapeHtml(c.nickname || c.username)}</div><div class="settings-row-desc">${escapeHtml(c.nexora_id)}</div></div>`;
           const b = document.createElement("button");
           b.className = "btn btn-primary"; b.textContent = "→";
           b.addEventListener("click", async () => {
-            try {
-              const { error } = await supabase.rpc("add_chat_member", {
-                p_chat_id: this.activeChat.id, p_user_id: c.id,
-              });
-              if (error) throw error;
-              b.textContent = "✓"; b.disabled = true;
-              toast("Добавлен", "success");
-              Sounds.success();
-            } catch (e) { toast(e.message || "Ошибка", "error"); }
+            try { const { error } = await supabase.rpc("add_chat_member", { p_chat_id: this.activeChat.id, p_user_id: c.id }); if (error) throw error; b.textContent = "✓"; b.disabled = true; toast("Добавлен", "success"); Sounds.success(); } catch (e) { toast(e.message || "Ошибка", "error"); }
           });
-          row.appendChild(b);
-          body.appendChild(row);
+          row.appendChild(b); body.appendChild(row);
         });
       },
     });
   }
 
-  /* ============================================================
-     SEARCH
-     ============================================================ */
+  /* SEARCH */
   async searchUser(query) {
     const q = (query || "").trim();
     if (!q) return;
@@ -5413,23 +5363,12 @@ class NEXORA {
         const card = document.createElement("div");
         card.className = "user-card";
         const botTag = u.is_bot ? ' <span class="bot-badge">[BOT]</span>' : "";
-        card.innerHTML = `
-          ${avatarHTML(u, "md")}
-          <div class="user-card-body">
-            <div class="user-card-name">${escapeHtml(u.username)}${botTag}</div>
-            <div class="user-card-id">${escapeHtml(u.nexora_id)}</div>
-          </div>
-          <button class="btn btn-primary">${t("open")}</button>`;
+        card.innerHTML = `${avatarHTML(u, "md")}<div class="user-card-body"><div class="user-card-name">${escapeHtml(u.username)}${botTag}</div><div class="user-card-id">${escapeHtml(u.nexora_id)}</div></div><button class="btn btn-primary">${t("open")}</button>`;
         card.querySelector("button").addEventListener("click", () => this.openUserProfile(u.id, u));
         list.appendChild(card);
       });
-      if (!list.children.length) {
-        list.innerHTML = `<div class="empty-state">Это только ты 🙂</div>`;
-      }
-    } catch (e) {
-      console.error(e);
-      list.innerHTML = `<div class="empty-state">Ошибка поиска: ${escapeHtml(e.message || "")}</div>`;
-    }
+      if (!list.children.length) list.innerHTML = `<div class="empty-state">Это только ты 🙂</div>`;
+    } catch (e) { console.error(e); list.innerHTML = `<div class="empty-state">Ошибка поиска: ${escapeHtml(e.message || "")}</div>`; }
   }
   async tryFindChannel(q) {
     try {
@@ -5443,10 +5382,7 @@ class NEXORA {
     list.innerHTML = `<div class="empty-state"><span class="spinner"></span></div>`;
     const ch = await this.tryFindChannel(name);
     list.innerHTML = "";
-    if (!ch) {
-      list.innerHTML = `<div class="empty-state">Канал не найден: @${escapeHtml(name)}</div>`;
-      return;
-    }
+    if (!ch) { list.innerHTML = `<div class="empty-state">Канал не найден: @${escapeHtml(name)}</div>`; return; }
     this.renderChannelResult(ch, list);
   }
   renderChannelResult(ch, container) {
@@ -5455,56 +5391,30 @@ class NEXORA {
     const pubTag = ch.is_public ? "public" : "private";
     const unameLine = ch.username ? `@${escapeHtml(ch.username)}` : "(приватный)";
     const kind = ch.type === "group" ? ICONS.group : ICONS.channel;
-    card.innerHTML = `
-      <div class="avatar avatar-md">${kind}</div>
-      <div class="user-card-body">
-        <div class="user-card-name">${escapeHtml(ch.title)}
-          <span class="channel-badge ${pubTag}">${pubTag}</span>
-        </div>
-        <div class="user-card-id">${unameLine} · ${ch.members_count} участников</div>
-      </div>
-      <button class="btn btn-primary">${ch.already_member ? t("open") : "Войти"}</button>`;
+    card.innerHTML = `<div class="avatar avatar-md">${kind}</div><div class="user-card-body"><div class="user-card-name">${escapeHtml(ch.title)}<span class="channel-badge ${pubTag}">${pubTag}</span></div><div class="user-card-id">${unameLine} · ${ch.members_count} участников</div></div><button class="btn btn-primary">${ch.already_member ? t("open") : "Войти"}</button>`;
     card.querySelector("button").addEventListener("click", async () => {
-      if (ch.already_member) {
-        await this.refreshChats();
-        await this.openChatById(ch.id);
-      } else if (ch.is_public) {
-        try {
-          const { error } = await supabase.rpc("join_channel", { p_chat_id: ch.id });
-          if (error) throw error;
-          toast("Присоединились", "success");
-          Sounds.success();
-          await this.refreshChats();
-          await this.openChatById(ch.id);
-        } catch (e) { toast(e.message || "Ошибка", "error"); }
+      if (ch.already_member) { await this.refreshChats(); await this.openChatById(ch.id); }
+      else if (ch.is_public) {
+        try { const { error } = await supabase.rpc("join_channel", { p_chat_id: ch.id }); if (error) throw error; toast("Присоединились", "success"); Sounds.success(); await this.refreshChats(); await this.openChatById(ch.id); } catch (e) { toast(e.message || "Ошибка", "error"); }
       } else {
         try {
           const token = ch.invite_token || null;
-          const { error } = await supabase.rpc("join_channel", {
-            p_chat_id: ch.id,
-            p_invite_token: token,
-          });
+          const { error } = await supabase.rpc("join_channel", { p_chat_id: ch.id, p_invite_token: token });
           if (error) throw error;
-          toast("Присоединились", "success");
-          Sounds.success();
-          await this.refreshChats();
-          await this.openChatById(ch.id);
+          toast("Присоединились", "success"); Sounds.success(); await this.refreshChats(); await this.openChatById(ch.id);
         } catch (e) { toast(e.message || "Ошибка", "error"); }
       }
     });
     container.appendChild(card);
   }
 
-  /* ============================================================
-     UPLOADS
-     ============================================================ */
+  /* UPLOADS */
   async uploadAvatar(file) {
     if (!file.type.startsWith("image/")) throw new Error("Только изображения");
     if (file.size > AVATAR_MAX) throw new Error("Максимум 2 MB");
     const ext = (file.name.split(".").pop() || "png").toLowerCase();
     const path = `${this.user.id}/avatar.${ext}`;
-    const { error: upErr } = await supabase.storage
-      .from(AVATAR_BUCKET).upload(path, file, { upsert: true, contentType: file.type });
+    const { error: upErr } = await supabase.storage.from(AVATAR_BUCKET).upload(path, file, { upsert: true, contentType: file.type });
     if (upErr) throw upErr;
     const { data: pub } = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(path);
     const url = pub.publicUrl + "?t=" + Date.now();
@@ -5516,8 +5426,7 @@ class NEXORA {
     if (file.size > COVER_MAX) throw new Error("Максимум 4 MB");
     const ext = (file.name.split(".").pop() || "jpg").toLowerCase();
     const path = `${this.user.id}/cover.${ext}`;
-    const { error: upErr } = await supabase.storage
-      .from(AVATAR_BUCKET).upload(path, file, { upsert: true, contentType: file.type });
+    const { error: upErr } = await supabase.storage.from(AVATAR_BUCKET).upload(path, file, { upsert: true, contentType: file.type });
     if (upErr) throw upErr;
     const { data: pub } = supabase.storage.from(AVATAR_BUCKET).getPublicUrl(path);
     const url = pub.publicUrl + "?t=" + Date.now();
@@ -5525,9 +5434,7 @@ class NEXORA {
     return url;
   }
 
-  /* ============================================================
-     GLOBAL BINDINGS
-     ============================================================ */
+  /* BINDINGS */
   bindGlobalEvents() {
     const start = () => {
       applyProfileTheme(getProfileTheme());
@@ -5539,12 +5446,8 @@ class NEXORA {
       $("goto-register").addEventListener("click", () => { Sounds.click(); this.showAuthCard("register"); });
       $("goto-login").addEventListener("click", () => { Sounds.click(); this.showAuthCard("login"); });
       $("mfa-cancel").addEventListener("click", () => { Sounds.click(); this.showAuthCard("login"); });
-      $("goto-forgot").addEventListener("click", () => {
-        alert("Восстановление через email недоступно — аккаунт использует nickname.");
-      });
-      ["login-username", "login-password"].forEach(id => {
-        $(id).addEventListener("keydown", (e) => { if (e.key === "Enter") this.doLogin(); });
-      });
+      $("goto-forgot").addEventListener("click", () => { alert("Восстановление через email недоступно — аккаунт использует nickname."); });
+      ["login-username", "login-password"].forEach(id => { $(id).addEventListener("keydown", (e) => { if (e.key === "Enter") this.doLogin(); }); });
       $("reg-password2").addEventListener("keydown", (e) => { if (e.key === "Enter") this.doRegister(); });
       $("mfa-code").addEventListener("keydown", (e) => { if (e.key === "Enter") this.doMfaVerify(); });
 
@@ -5571,6 +5474,84 @@ class NEXORA {
         Sounds.click();
         const q = prompt("Введите @username или ссылку:");
         if (q) this.searchChannel(q.replace(/^@/, ""));
+      });
+
+      /* COMMUNITIES */
+      const commBtn = $("btn-communities");
+      if (commBtn) commBtn.addEventListener("click", () => { Sounds.click(); this.community.open(); });
+      const qComm = $("btn-quick-community");
+      if (qComm) qComm.addEventListener("click", () => { Sounds.click(); this.community.open(); });
+      const commClose = $("btn-communities-close");
+      if (commClose) commClose.addEventListener("click", () => {
+        $("communities-home").classList.add("hidden");
+      });
+      const commCreate = $("btn-communities-create");
+      if (commCreate) commCreate.addEventListener("click", () => {
+        $("communities-home").classList.add("hidden");
+        this.community.openCreateDialog();
+      });
+      const commJoin = $("btn-communities-join");
+      if (commJoin) commJoin.addEventListener("click", () => {
+        $("communities-home").classList.add("hidden");
+        this.community.openJoinByLinkDialog();
+      });
+      const commMenu = $("btn-community-menu");
+      if (commMenu) commMenu.addEventListener("click", () => this.community.openCommunityMenu());
+      const commMenuMobile = $("btn-community-menu-mobile");
+      if (commMenuMobile) commMenuMobile.addEventListener("click", () => {
+        $("community-sidebar").classList.toggle("open");
+      });
+      const toggleMembers = $("btn-community-toggle-members");
+      if (toggleMembers) toggleMembers.addEventListener("click", () => {
+        $("community-members-panel").classList.toggle("open");
+        $("community-members-panel").classList.toggle("hidden");
+      });
+      const commComposer = $("community-composer");
+      if (commComposer) {
+        commComposer.addEventListener("input", () => {
+          commComposer.style.height = "auto";
+          commComposer.style.height = Math.min(commComposer.scrollHeight, 160) + "px";
+        });
+        commComposer.addEventListener("keydown", (e) => {
+          if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); this.community.sendFromComposer(); }
+        });
+      }
+      const commSend = $("btn-community-send");
+      if (commSend) commSend.addEventListener("click", () => this.community.sendFromComposer());
+      const commAttach = $("btn-community-attach");
+      if (commAttach) commAttach.addEventListener("click", () => {
+        const inp = $("file-community-attach");
+        inp.value = "";
+        inp.onchange = async () => {
+          const file = inp.files[0]; if (!file || !this.community.activeChannel) return;
+          if (file.size > ATTACH_MAX) return toast("Файл больше 50 MB", "warning");
+          try {
+            toast("Загрузка…", "info");
+            const safeName = file.name.replace(/[^\w.\-]+/g, "_").slice(0, 80);
+            const path = `${this.user.id}/community/${this.community.activeCommunity.id}/${this.community.activeChannel.id}/${Date.now()}-${safeName}`;
+            const { error: upErr } = await supabase.storage.from(ATTACH_BUCKET).upload(path, file, { contentType: file.type, upsert: false });
+            if (upErr) throw upErr;
+            const { data: pub } = supabase.storage.from(ATTACH_BUCKET).getPublicUrl(path);
+            let kind = "file";
+            if (file.type.startsWith("image/")) kind = "image";
+            else if (file.type.startsWith("video/")) kind = "video";
+            const { data, error } = await supabase.from("community_messages").insert({
+              channel_id: this.community.activeChannel.id,
+              community_id: this.community.activeCommunity.id,
+              sender_id: this.user.id,
+              content: "", kind,
+              attachment_url: pub.publicUrl, attachment_type: kind,
+              file_name: file.name, file_size: file.size,
+            }).select().single();
+            if (error) throw error;
+            if (!this.community.messages.find(x => x.id === data.id)) {
+              this.community.messages.push(data);
+              this.community.renderMessages();
+            }
+            Sounds.send();
+          } catch (e) { toast(e.message || "Ошибка", "error"); }
+        };
+        inp.click();
       });
 
       $("me-avatar").addEventListener("click", () => { Sounds.click(); this.openProfile(); });
@@ -5618,12 +5599,11 @@ class NEXORA {
 
       const vCancel = $("voice-cancel-btn");
       if (vCancel) vCancel.addEventListener("click", () => {
-        if (this._recorder) {
-          this._recorder.onstop = null;
-          try { this._recorder.stop(); } catch (_) {}
-          this._recorder = null;
-        }
+        if (this._recorder) { this._recorder.onstop = null; try { this._recorder.stop(); } catch (_) {} this._recorder = null; }
         if (this._voiceTimer) { clearInterval(this._voiceTimer); this._voiceTimer = null; }
+        if (this._voiceRAF) { cancelAnimationFrame(this._voiceRAF); this._voiceRAF = null; }
+        if (this._voiceAC) { try { this._voiceAC.close(); } catch (_) {} this._voiceAC = null; }
+        this._voiceAnalyser = null;
         $("voice-bar").classList.add("hidden");
       });
       const vSend = $("voice-send-btn");
@@ -5636,21 +5616,13 @@ class NEXORA {
       if (peerAv) peerAv.addEventListener("click", () => {
         if (!this.activeChat) return;
         const ctype = this.activeChat.type || "direct";
-        if (ctype === "direct" && this.activeChat.peer) {
-          Sounds.click();
-          this.openUserProfile(this.activeChat.peer.id, this.activeChat.peer);
-        } else {
-          this.openChatInfo();
-        }
+        if (ctype === "direct" && this.activeChat.peer) { Sounds.click(); this.openUserProfile(this.activeChat.peer.id, this.activeChat.peer); }
+        else this.openChatInfo();
       });
 
-      $("btn-mobile-menu").addEventListener("click", () => {
-        $("sidebar").classList.toggle("hidden-mobile");
-      });
+      $("btn-mobile-menu").addEventListener("click", () => { $("sidebar").classList.toggle("hidden-mobile"); });
       $("sidebar").addEventListener("click", (e) => {
-        if (window.innerWidth <= 768 && e.target.closest(".list-item")) {
-          $("sidebar").classList.add("hidden-mobile");
-        }
+        if (window.innerWidth <= 768 && e.target.closest(".list-item")) $("sidebar").classList.add("hidden-mobile");
       });
 
       $("file-avatar").addEventListener("change", async (e) => {
@@ -5659,23 +5631,14 @@ class NEXORA {
           toast("Загрузка…", "info");
           await this.uploadAvatar(f);
           this.renderSidebarFooter();
-          this.rememberAccount({
-            id: this.user.id, username: this.profile.username,
-            nexora_id: this.profile.nexora_id, avatar_url: this.profile.avatar_url,
-          });
-          toast("Аватар обновлён", "success");
-          Sounds.success();
+          this.rememberAccount({ id: this.user.id, username: this.profile.username, nexora_id: this.profile.nexora_id, avatar_url: this.profile.avatar_url });
+          toast("Аватар обновлён", "success"); Sounds.success();
         } catch (err) { toast(err.message || "Ошибка", "error"); }
       });
       const fileCover = $("file-cover");
       if (fileCover) fileCover.addEventListener("change", async (e) => {
         const f = e.target.files[0]; if (!f) return;
-        try {
-          toast("Загрузка…", "info");
-          await this.uploadCover(f);
-          toast("Обложка обновлена", "success");
-          Sounds.success();
-        } catch (err) { toast(err.message || "Ошибка", "error"); }
+        try { toast("Загрузка…", "info"); await this.uploadCover(f); toast("Обложка обновлена", "success"); Sounds.success(); } catch (err) { toast(err.message || "Ошибка", "error"); }
       });
 
       document.addEventListener("click", (e) => {
@@ -5704,11 +5667,22 @@ class NEXORA {
 
     if (document.readyState === "loading") {
       window.addEventListener("DOMContentLoaded", start, { once: true });
-    } else {
-      start();
-    }
+    } else start();
   }
 }
+
+/* ============================================================
+   BOT COMMANDS
+   ============================================================ */
+const BOT_COMMANDS = {
+  "/help": "Доступные команды:\n/newbot — создать своего бота\n/mybots — список моих ботов\n/time — текущее время\n/roll 6 — случайное число от 1 до N\n/echo текст — вернуть текст\n/ping — pong",
+  "/ping": "pong 🏓",
+  "/time": () => `Сейчас ${new Date().toLocaleString()}`,
+  "/roll": (args) => { const n = Math.max(1, Math.min(1_000_000, parseInt(args[0] || "6", 10) || 6)); return `🎲 ${Math.floor(Math.random() * n) + 1} (из ${n})`; },
+  "/echo": (args) => args.join(" ") || "(пусто)",
+  "/newbot": () => "Открываю мастер создания бота…",
+  "/mybots": () => "Открываю список ботов…",
+};
 
 /* ============================================================
    ENTRYPOINT
