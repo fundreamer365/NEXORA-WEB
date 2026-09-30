@@ -1,8 +1,12 @@
 /* ============================================================
-   NEXORA v8.5 — единый app.js
-   Правки: A (RLS), B-3 (join_channel+token), C (poll-creator, SW),
-   оптимизация H2/H4/H5/H6, SVG-иконки, MEDIUM/LOW,
-   Realtime: chat_members, chats, reactions, custom_emojis.
+   NEXORA v9.0 — единый app.js
+   Этап 1: emoji/sticker picker, reaction picker + voter panel,
+   удаление у себя / у всех (soft delete + realtime + анимация),
+   полноценная карточка профиля, статусы, настройки уведомлений,
+   соц-ссылки, исправление комментариев канала.
+   Сохранено: A (RLS), B-3 (join_channel+token), C (poll-creator,
+   SW, оптимизация, SVG-иконки, realtime chat_members/chats/
+   reactions/custom_emojis).
    ============================================================ */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
@@ -31,6 +35,9 @@ const POLL_MS = 20000;
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "🔥", "😮", "😢"];
 const TYPING_TIMEOUT_MS = 3000;
 const ACCOUNTS_KEY = "nexora-accounts";
+const RECENT_EMOJI_KEY = "nexora-recent-emoji";
+const RECENT_REACTIONS_KEY = "nexora-recent-reactions";
+const HIDDEN_MSGS_KEY = "nexora-hidden-msgs";
 
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: true, autoRefreshToken: true, storageKey: "nexora-auth" },
@@ -53,6 +60,52 @@ const ICONS = {
 };
 
 /* ============================================================
+   СОЦ-ССЫЛКИ
+   ============================================================ */
+const SOCIAL_META = {
+  telegram:         { label: "Telegram",         icon: "✈", color: "#26a5e4", placeholder: "https://t.me/username" },
+  telegram_channel: { label: "Telegram Channel", icon: "📣", color: "#26a5e4", placeholder: "https://t.me/channel" },
+  steam:            { label: "Steam",            icon: "🎮", color: "#66c0f4", placeholder: "https://steamcommunity.com/id/..." },
+  itch:             { label: "itch.io",          icon: "🕹", color: "#fa5c5c", placeholder: "https://username.itch.io" },
+  github:           { label: "GitHub",           icon: "🐙", color: "#e6e6e6", placeholder: "https://github.com/username" },
+  youtube:          { label: "YouTube",          icon: "▶", color: "#ff0033", placeholder: "https://youtube.com/@channel" },
+  discord:          { label: "Discord",          icon: "💬", color: "#5865f2", placeholder: "https://discord.gg/invite" },
+  website:          { label: "Website",          icon: "🌐", color: "#9aa0ff", placeholder: "https://example.com" },
+  twitch:           { label: "Twitch",           icon: "🎥", color: "#9146ff", placeholder: "https://twitch.tv/username" },
+  vk:               { label: "VK",               icon: "🅥", color: "#4680c2", placeholder: "https://vk.com/username" },
+  reddit:           { label: "Reddit",           icon: "👽", color: "#ff4500", placeholder: "https://reddit.com/user/username" },
+  x:                { label: "X",                icon: "✖", color: "#e6e6e6", placeholder: "https://x.com/username" },
+  linkedin:         { label: "LinkedIn",         icon: "in", color: "#0a66c2", placeholder: "https://linkedin.com/in/username" },
+  spotify:          { label: "Spotify",          icon: "♫", color: "#1db954", placeholder: "https://open.spotify.com/user/..." },
+  bandcamp:         { label: "Bandcamp",         icon: "🎵", color: "#629aa9", placeholder: "https://username.bandcamp.com" },
+  behance:          { label: "Behance",          icon: "Bē", color: "#1769ff", placeholder: "https://behance.net/username" },
+  dribbble:         { label: "Dribbble",         icon: "●", color: "#ea4c89", placeholder: "https://dribbble.com/username" },
+};
+
+/* ============================================================
+   BADGE EMOJI (built-in animated-friendly SVG-ish set)
+   ============================================================ */
+const BADGE_EMOJIS = [
+  "🔥","⚡","🌀","💎","🎮","🎧","🎨","🚀","🌙","⭐","❄","🌸",
+  "🍕","☕","💜","🖤","🐱","🐉","🦊","🎯","🏆","🛡","⚔","🌈",
+];
+
+/* ============================================================
+   EMOJI PICKER — КАТАЛОГ
+   ============================================================ */
+const EMOJI_CATEGORIES = {
+  "Часто используемые": ["👍","❤️","😂","🔥","😮","😢","🙏","🎉","👀","💯","✨","🤔"],
+  "Смайлы": ["😀","😃","😄","😁","😆","😅","🤣","😂","🙂","🙃","😉","😊","😇","🥰","😍","🤩","😘","😋","😜","🤪","🤔","🤨","😐","😴","😷","🤒","🥳","😎","🤓","😕","😟","😭","😱","😡","🥺","😤","🤯","🥵","🥶","😇"],
+  "Жесты": ["👋","🤚","✋","🖖","👌","✌️","🤞","🤟","🤘","🤙","👈","👉","👆","👇","☝️","👍","👎","✊","👊","👏","🙌","🤲","🤝","🙏","💪","🦾","🫶"],
+  "Сердца": ["❤️","🧡","💛","💚","💙","💜","🖤","🤍","🤎","💔","❣️","💕","💞","💓","💗","💖","💘","💝","💟"],
+  "Животные": ["🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯","🦁","🐮","🐷","🐸","🐵","🙈","🙉","🙊","🐒","🐔","🐧","🐦","🐤","🦄","🐝","🦋","🐢","🐙","🦑","🐳"],
+  "Еда": ["🍏","🍎","🍐","🍊","🍋","🍌","🍉","🍇","🍓","🍒","🥝","🥑","🍔","🍟","🍕","🌭","🍜","🍣","🍱","🍦","🍰","🎂","🍫","🍩","☕","🍵","🍺","🍷"],
+  "Объекты": ["⌚","📱","💻","⌨️","🖥️","📷","📸","🎥","📞","📺","⏰","💡","🔦","💰","💳","🔑","🔒","🔨","🧲","📎","✂️","📚","✏️","🖊"],
+  "Символы": ["🔥","⭐","🌟","✨","⚡","💥","💫","💦","💨","💬","✅","❌","❗","❓","💯","🔔","🎵","🎶","♾️","🔱","☯","✡","☮","⚛"],
+  "Флаги": ["🏳️","🏴","🏁","🚩","🎌","🏴‍☠️"],
+};
+
+/* ============================================================
    UTIL
    ============================================================ */
 const $ = (id) => document.getElementById(id);
@@ -70,7 +123,6 @@ function safeUrl(u) {
   return s.replace(/"/g, "%22");
 }
 
-/* M3: локализация дат/времени */
 function _locale() {
   const l = currentLocale();
   return l === "ru" ? "ru-RU" : l === "uk" ? "uk-UA" : l === "kk" ? "kk-KZ" : l === "de" ? "de-DE" : l === "zh" ? "zh-CN" : "en-US";
@@ -152,17 +204,49 @@ function toast(message, kind = "info", title = null) {
   setTimeout(() => { el.style.opacity = "0"; setTimeout(() => el.remove(), 250); }, 3200);
 }
 
+/* --- localStorage helpers --- */
+function lsGet(key, fallback) {
+  try { return JSON.parse(localStorage.getItem(key) || JSON.stringify(fallback)); }
+  catch { return fallback; }
+}
+function lsSet(key, val) {
+  try { localStorage.setItem(key, JSON.stringify(val)); } catch (_) {}
+}
+function pushRecent(key, value, max = 24) {
+  const list = lsGet(key, []);
+  const idx = list.indexOf(value);
+  if (idx >= 0) list.splice(idx, 1);
+  list.unshift(value);
+  lsSet(key, list.slice(0, max));
+}
+
+/* --- badge/status --- */
+const STATUS_META = {
+  online:    { label: "В сети",       color: "#3ddc84", symbol: "" },
+  dnd:       { label: "Не беспокоить", color: "#ff5a6e", symbol: "🌙" },
+  busy:      { label: "Занят",         color: "#ffb547", symbol: "⛔" },
+  invisible: { label: "Невидимка",     color: "#5a5a70", symbol: "⚫" },
+};
+
+/* ============================================================
+   AVATAR
+   ============================================================ */
 function avatarHTML(user, size = "md", extraClass = "") {
   const name = (user?.username || "?").trim();
   const initial = name ? name[0].toUpperCase() : "?";
   const cls = `avatar avatar-${size}${extraClass ? " " + extraClass : ""}`;
-  const online = user?.is_online && user?.show_online !== false && !user?.is_bot;
+  const status = user?.status || "online";
+  const online = user?.is_online && user?.show_online !== false && !user?.is_bot && status !== "invisible";
   const onlineCls = online ? " online-glow" : "";
+  const dotColor = STATUS_META[status]?.color || "#3ddc84";
+  const dot = online
+    ? `<span class="online-dot" style="background:${dotColor};box-shadow:0 0 8px ${dotColor}"></span>`
+    : "";
   if (user?.avatar_url) {
     const safe = safeUrl(user.avatar_url);
-    if (safe) return `<div class="avatar-wrap"><div class="${cls}${onlineCls}" style="background-image:url('${safe}')"></div>${online ? '<span class="online-dot"></span>' : ""}</div>`;
+    if (safe) return `<div class="avatar-wrap"><div class="${cls}${onlineCls}" style="background-image:url('${safe}')"></div>${dot}</div>`;
   }
-  return `<div class="avatar-wrap"><div class="${cls}${onlineCls}">${escapeHtml(initial)}</div>${online ? '<span class="online-dot"></span>' : ""}</div>`;
+  return `<div class="avatar-wrap"><div class="${cls}${onlineCls}">${escapeHtml(initial)}</div>${dot}</div>`;
 }
 function paintAvatar(el, user) {
   if (!el) return;
@@ -175,15 +259,9 @@ function paintAvatar(el, user) {
   el.textContent = name ? name[0].toUpperCase() : "?";
 }
 
-const EMOJI = {
-  Smileys: ["😀","😃","😄","😁","😆","😅","🤣","😂","🙂","🙃","😉","😊","😇","🥰","😍","🤩","😘","😋","😜","🤪","🤔","🤨","😐","😴","😷","🤒","🥳","😎","🤓","😕","😟","😭","😱","😡"],
-  Gestures: ["👋","🤚","✋","🖖","👌","✌️","🤞","🤟","🤘","🤙","👈","👉","👆","👇","☝️","👍","👎","✊","👊","👏","🙌","🤲","🤝","🙏","💪"],
-  Hearts: ["❤️","🧡","💛","💚","💙","💜","🖤","🤍","💔","❣️","💕","💞","💓","💗","💖","💘","💝"],
-  Animals: ["🐶","🐱","🐭","🐹","🐰","🦊","🐻","🐼","🐨","🐯","🦁","🐮","🐷","🐸","🐵","🙈","🙉","🙊","🐒","🐔","🐧","🐦"],
-  Food: ["🍏","🍎","🍐","🍊","🍋","🍌","🍉","🍇","🍓","🍒","🥝","🥑","🍔","🍟","🍕","🌭","🍜","🍣","🍱","🍦"],
-  Objects: ["⌚","📱","💻","⌨️","🖥️","📷","📸","🎥","📞","📺","⏰","💡","🔦","💰","💳","🔑"],
-  Symbols: ["🔥","⭐","🌟","✨","⚡","💥","💫","💦","💨","💬","✅","❌","❗","💯","🔔","🎵","🎶","♾️"],
-};
+/* ============================================================
+   SYSTEM STICKERS (SVG)
+   ============================================================ */
 const SYSTEM_STICKERS = [
   { id: "sys-heart", name: "Heart", url: svgEmoji("❤️") },
   { id: "sys-fire", name: "Fire", url: svgEmoji("🔥") },
@@ -197,16 +275,15 @@ const SYSTEM_STICKERS = [
   { id: "sys-alien", name: "Alien", url: svgEmoji("👽") },
   { id: "sys-skull", name: "Skull", url: svgEmoji("💀") },
   { id: "sys-rocket", name: "Rocket", url: svgEmoji("🚀") },
-  { id: "sys-cat", name: "Cat", url: svgEmoji("🐱") },
-  { id: "sys-dog", name: "Dog", url: svgEmoji("🐶") },
-  { id: "sys-unicorn", name: "Unicorn", url: svgEmoji("🦄") },
-  { id: "sys-pizza", name: "Pizza", url: svgEmoji("🍕") },
 ];
 function svgEmoji(e) {
   const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><text x="50" y="72" text-anchor="middle" font-size="72">${e}</text></svg>`;
   return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
 }
 
+/* ============================================================
+   SOUND ENGINE
+   ============================================================ */
 class SoundEngine {
   constructor() {
     this.ctx = null;
@@ -317,17 +394,19 @@ class NEXORA {
     this._recorder = null;
     this._chunks = [];
     this._voiceTimer = null;
+    this._activePicker = null;
 
-    /* Дебаунс-таймеры для Realtime-событий */
     this._chatsReloadTimer = null;
     this._membersReloadTimer = null;
     this._pollsReloadTimer = null;
 
-    /* Глобальные каналы (живут всё время после логина) */
     this._chMembersChannel = null;
     this._chChatsChannel = null;
     this._chReactionsChannel = null;
     this._chEmojisChannel = null;
+
+    /* Локально скрытые сообщения */
+    this.hiddenMsgs = new Set(lsGet(HIDDEN_MSGS_KEY, []));
 
     this.bindGlobalEvents();
   }
@@ -340,7 +419,16 @@ class NEXORA {
   isPeerOnline(chat) {
     if (!chat?.peer) return false;
     if (chat.peer.is_bot) return false;
+    const st = chat.peer.status || "online";
+    if (st === "invisible") return false;
     return !!(chat.peer.is_online && chat.peer.show_online !== false);
+  }
+  markHidden(msgId) {
+    this.hiddenMsgs.add(msgId);
+    lsSet(HIDDEN_MSGS_KEY, [...this.hiddenMsgs]);
+  }
+  isHidden(msgId) {
+    return this.hiddenMsgs.has(msgId);
   }
 
   /* ============================================================
@@ -533,6 +621,9 @@ class NEXORA {
   async notify(title, body, tag = "nexora") {
     if (!("Notification" in window)) return;
     if (Notification.permission !== "granted") return;
+    /* Уважаем настройку + статус DND */
+    if (this.profile?.notifications_enabled === false) return;
+    if (this.profile?.status === "dnd") return;
     const opts = { body, icon: "assets/icon-192.png", badge: "assets/icon-192.png", tag };
     try {
       if (navigator.serviceWorker?.controller) {
@@ -724,10 +815,14 @@ class NEXORA {
   }
   async setOnline(online) {
     if (!this.user) return;
+    /* Уважаем invisible: не выставляем is_online=true, если статус invisible */
+    const status = this.profile?.status || "online";
+    const effective = online && status !== "invisible";
     try {
       await supabase.from("profiles").update({
-        is_online: online, last_seen: new Date().toISOString(),
+        is_online: effective, last_seen: new Date().toISOString(),
       }).eq("id", this.user.id);
+      if (this.profile) this.profile.is_online = effective;
     } catch (_) {}
   }
   startPresence() {
@@ -767,7 +862,6 @@ class NEXORA {
     await this.loadChatThemes(true);
     this.subscribeProfiles();
     this.subscribeGlobalMessages();
-    /* Новые глобальные подписки — real-time везде */
     this.subscribeGlobalChatMembers();
     this.subscribeGlobalChats();
     this.subscribeGlobalReactions();
@@ -783,6 +877,19 @@ class NEXORA {
     $("me-name").textContent = me.username;
     $("me-id").textContent = me.nexora_id;
     paintAvatar($("me-avatar"), me);
+    /* Значок рядом с именем, если есть */
+    const wrap = $("me-name");
+    if (me.badge_emoji) {
+      if (!wrap.dataset.badgeApplied) {
+        wrap.insertAdjacentHTML("afterend", `<span id="me-badge" style="margin-left:6px">${escapeHtml(me.badge_emoji)}</span>`);
+        wrap.dataset.badgeApplied = "1";
+      } else {
+        const b = $("me-badge"); if (b) b.textContent = me.badge_emoji;
+      }
+    } else {
+      const b = $("me-badge"); if (b) b.remove();
+      delete wrap.dataset.badgeApplied;
+    }
   }
 
   /* ============================================================
@@ -912,6 +1019,7 @@ class NEXORA {
       else if (chat.type === "group") badgeHTML = `<span class="list-item-badge-icon">${ICONS.group}</span>`;
       else if (chat.type === "saved") badgeHTML = `<span class="list-item-badge-icon">${ICONS.star}</span>`;
       const botBadge = peer.is_bot ? ' <span class="bot-badge">[BOT]</span>' : "";
+      const badgeEmoji = peer?.badge_emoji ? `<span style="margin-left:6px">${escapeHtml(peer.badge_emoji)}</span>` : "";
       const avatarUser = chat.type === "saved" && !chat.is_notification
         ? { username: "★" }
         : chat.is_notification ? { username: "N" } : peer;
@@ -925,7 +1033,7 @@ class NEXORA {
         ${avatarHTML(avatarUser, "md")}
         <div class="list-item-body">
           <div class="list-item-title">
-            <span>${badgeHTML}${escapeHtml(title)}${botBadge}${chanTag}${ephTag}</span>
+            <span>${badgeHTML}${escapeHtml(title)}${badgeEmoji}${botBadge}${chanTag}${ephTag}</span>
             <span class="time">${last ? formatTime(last.created_at) : ""}</span>
           </div>
           <div class="list-item-sub">${typers.length ? sub : escapeHtml(sub)}</div>
@@ -1177,7 +1285,7 @@ class NEXORA {
       const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
       const [{ data: chats }, { data: members }, { data: msgs }, { data: nicks }, { data: notifs }] = await Promise.all([
         supabase.from("chats").select("id, is_group, title, type, avatar_url, updated_at, owner_id, username, is_public, invite_token, is_ephemeral, expires_at").in("id", ids),
-        supabase.from("chat_members").select("chat_id, user_id, role, profile:profiles!chat_members_user_id_fkey(id, username, nexora_id, avatar_url, is_online, show_online, is_bot)").in("chat_id", ids),
+        supabase.from("chat_members").select("chat_id, user_id, role, profile:profiles!chat_members_user_id_fkey(id, username, nexora_id, avatar_url, is_online, show_online, is_bot, status, badge_emoji)").in("chat_id", ids),
         supabase.from("messages").select("chat_id, content, kind, created_at, sender_id").in("chat_id", ids).gte("created_at", thirtyDaysAgo).order("created_at", { ascending: false }).limit(500),
         supabase.from("contact_nicknames").select("contact_id, nickname").eq("owner_id", this.user.id),
         supabase.from("notification_chats").select("chat_id").eq("user_id", this.user.id),
@@ -1231,7 +1339,6 @@ class NEXORA {
     }
   }
 
-  /* Дебаунс-обёртка для refreshChats (чтобы не штормило на Realtime) */
   scheduleRefreshChats(delay = 300) {
     clearTimeout(this._chatsReloadTimer);
     this._chatsReloadTimer = setTimeout(() => {
@@ -1303,6 +1410,7 @@ class NEXORA {
     else if (ctype === "group") badgeHTML = `<span class="list-item-badge-icon">${ICONS.group}</span>`;
     else if (ctype === "saved") badgeHTML = `<span class="list-item-badge-icon">${ICONS.star}</span>`;
     const botTag = chat.peer?.is_bot ? ' <span class="bot-badge">[BOT]</span>' : "";
+    const badgeEmoji = chat.peer?.badge_emoji ? `<span style="margin-left:6px">${escapeHtml(chat.peer.badge_emoji)}</span>` : "";
     let title;
     if (chat.is_notification) title = "NEXORA";
     else if (ctype === "saved") title = "Избранное";
@@ -1316,7 +1424,7 @@ class NEXORA {
       const left = Math.max(0, Math.floor((new Date(chat.expires_at) - new Date()) / 60000));
       ephTag = `<span class="ephemeral-badge">⏳ ${left} мин</span>`;
     }
-    $("chat-peer-name").innerHTML = `${badgeHTML}${escapeHtml(title)}${botTag}${chanTag}${ephTag}
+    $("chat-peer-name").innerHTML = `${badgeHTML}${escapeHtml(title)}${badgeEmoji}${botTag}${chanTag}${ephTag}
       <span class="online-dot${this.isPeerOnline(chat) ? " online" : ""}"></span>`;
     if (chat.is_notification) $("chat-peer-sub").textContent = "Уведомления о входах в аккаунт";
     else if (ctype === "saved") $("chat-peer-sub").textContent = "Твои сохранённые сообщения";
@@ -1332,6 +1440,7 @@ class NEXORA {
     $("btn-send").disabled = blocked;
     $("btn-attach").disabled = blocked;
     $("btn-emoji").disabled = blocked;
+    $("btn-sticker").disabled = blocked;
     $("btn-poll").disabled = blocked;
     $("btn-voice").disabled = blocked;
     $("composer").placeholder = blocked ? t("onlyAdmins") : t("writeMessage");
@@ -1368,6 +1477,12 @@ class NEXORA {
     this.startPolling(chat.id);
     this.markChatRead(chat.id);
     this.hideReplyPreview();
+    /* Скрываем локально удалённые сообщения */
+    this.applyHiddenFilter();
+  }
+  applyHiddenFilter() {
+    if (!this.hiddenMsgs.size) return;
+    this.messages = this.messages.filter(m => !this.hiddenMsgs.has(m.id));
   }
   async loadMembers() {
     try {
@@ -1379,12 +1494,12 @@ class NEXORA {
   async loadMessages() {
     const { data, error } = await supabase
       .from("messages")
-      .select("id, chat_id, sender_id, content, kind, sticker_id, attachment_url, attachment_type, file_name, file_size, edited_at, created_at, reply_to, pinned, pinned_at, channel_post_id, expires_at")
+      .select("id, chat_id, sender_id, content, kind, sticker_id, attachment_url, attachment_type, file_name, file_size, edited_at, created_at, reply_to, pinned, pinned_at, channel_post_id, expires_at, deleted_at, deleted_by")
       .eq("chat_id", this.activeChat.id)
       .order("created_at", { ascending: true })
       .limit(500);
     if (error) { console.error(error); this.messages = []; return; }
-    this.messages = data || [];
+    this.messages = (data || []).filter(m => !this.hiddenMsgs.has(m.id));
   }
   async loadReactions() {
     try {
@@ -1513,7 +1628,7 @@ class NEXORA {
       more.textContent = `↑ ${this.visibleStart} старых сообщений`;
       box.appendChild(more);
     }
-    const pinned = this.messages.filter(m => m.pinned);
+    const pinned = this.messages.filter(m => m.pinned && !m.deleted_at);
     if (pinned.length) {
       const pinBar = document.createElement("div");
       pinBar.className = "pinned-bar";
@@ -1558,14 +1673,24 @@ class NEXORA {
     const row = document.createElement("div");
     row.className = "msg-row" + (isOwn ? " own" : "");
     row.dataset.messageId = m.id;
+    if (m.deleted_at) row.classList.add("deleted");
 
     const bubble = document.createElement("div");
     bubble.className = "msg-bubble";
-    if (m.pinned) bubble.classList.add("pinned");
+    if (m.pinned && !m.deleted_at) bubble.classList.add("pinned");
+
+    if (m.deleted_at) {
+      const placeholder = document.createElement("div");
+      placeholder.className = "msg-deleted";
+      placeholder.textContent = "Сообщение удалено";
+      bubble.appendChild(placeholder);
+      row.appendChild(bubble);
+      return row;
+    }
 
     if (m.reply_to) {
       const parent = this.messages.find(x => x.id === m.reply_to);
-      if (parent) {
+      if (parent && !parent.deleted_at) {
         const rp = document.createElement("div");
         rp.className = "msg-reply";
         const parentSender = this.members.find(x => x.user_id === parent.sender_id);
@@ -1617,11 +1742,10 @@ class NEXORA {
         const chip = document.createElement("div");
         chip.className = "reaction-chip" + (rx[emoji].includes(this.user.id) ? " mine" : "");
         chip.textContent = `${emoji} ${rx[emoji].length}`;
-        chip.title = rx[emoji].length <= 5 ? rx[emoji].map(uid => {
-          const u = this.members.find(mm => mm.user_id === uid);
-          return u ? (u.username || "User") : "";
-        }).filter(Boolean).join(", ") : "";
-        chip.addEventListener("click", () => this.toggleReaction(m.id, emoji));
+        chip.addEventListener("click", (e) => {
+          e.stopPropagation();
+          this.showReactionVoters(m.id, emoji);
+        });
         rbox.appendChild(chip);
       });
       bubble.appendChild(rbox);
@@ -1646,9 +1770,10 @@ class NEXORA {
     row.addEventListener("click", (e) => {
       if (e.target.closest("a")) return;
       if (e.target.closest(".comments-btn")) return;
+      if (e.target.closest(".reaction-chip")) return;
       if (clickTimer) {
         clearTimeout(clickTimer); clickTimer = null;
-        this.openReactionBar(e, m);
+        this.openReactionPicker(e, m);
       } else {
         clickTimer = setTimeout(() => { clickTimer = null; }, 260);
       }
@@ -1681,7 +1806,6 @@ class NEXORA {
       if (poll.is_quiz && poll.correct_index === idx) optEl.classList.add("correct");
       if (poll.is_quiz && isVoted && poll.correct_index !== idx) optEl.classList.add("incorrect");
       const pct = totalVotes > 0 ? Math.round((counts[idx] / totalVotes) * 100) : 0;
-      /* M15: список проголосовавших (для неанонимных) */
       let votersHTML = "";
       if (!poll.is_anonymous) {
         const voterNames = [];
@@ -1844,6 +1968,7 @@ class NEXORA {
      ============================================================ */
   openMessageContextMenu(event, msg, isOwn) {
     this.closeContextMenu();
+    if (msg.deleted_at) return;
     const menu = document.createElement("div");
     menu.className = "ctx-menu"; menu.id = "ctx-menu";
     const rxRow = document.createElement("div");
@@ -1854,6 +1979,14 @@ class NEXORA {
       b.addEventListener("click", () => { this.closeContextMenu(); this.toggleReaction(msg.id, e); });
       rxRow.appendChild(b);
     });
+    const more = document.createElement("button");
+    more.textContent = "＋";
+    more.title = "Больше реакций";
+    more.addEventListener("click", (ev) => {
+      this.closeContextMenu();
+      this.openReactionPicker(ev, msg);
+    });
+    rxRow.appendChild(more);
     menu.appendChild(rxRow);
     const mk = (label, handler, danger = false) => {
       const b = document.createElement("button");
@@ -1874,7 +2007,10 @@ class NEXORA {
       mk("⭐ В избранное", () => this.saveToFavorites(msg));
     }
     mk(msg.pinned ? "📌 Открепить" : "📌 Закрепить", () => this.togglePin(msg));
-    if (isOwn) mk(`🗑 ${t("delete")}`, () => this.deleteMessage(msg), true);
+    mk("🗑 Удалить у себя", () => this.deleteMessageForMe(msg), true);
+    if (isOwn || this.canDeleteForEveryone()) {
+      mk("🗑 Удалить у всех", () => this.deleteMessageForEveryone(msg), true);
+    }
     document.body.appendChild(menu);
     const r = event.target.getBoundingClientRect();
     const mw = menu.offsetWidth, mh = menu.offsetHeight;
@@ -1885,22 +2021,291 @@ class NEXORA {
     menu.style.left = left + "px"; menu.style.top = top + "px";
     setTimeout(() => document.addEventListener("click", this.closeContextMenu, { once: true }), 0);
   }
-  openReactionBar(event, msg) {
-    this.closeContextMenu();
-    const bar = document.createElement("div");
-    bar.className = "reaction-bar"; bar.id = "ctx-menu";
-    QUICK_REACTIONS.forEach(e => {
-      const b = document.createElement("button");
-      b.textContent = e;
-      b.addEventListener("click", () => { this.closeContextMenu(); this.toggleReaction(msg.id, e); });
-      bar.appendChild(b);
-    });
-    document.body.appendChild(bar);
-    const r = event.target.getBoundingClientRect();
-    bar.style.left = Math.min(r.left, window.innerWidth - 260) + "px";
-    bar.style.top = Math.max(10, r.top - 50) + "px";
-    setTimeout(() => document.addEventListener("click", this.closeContextMenu, { once: true }), 0);
+  canDeleteForEveryone() {
+    const role = this.activeChat?.my_role;
+    return role === "owner" || role === "admin";
   }
+
+  /* ============================================================
+     REACTION PICKER (полный)
+     ============================================================ */
+  openReactionPicker(event, msg) {
+    this.closeContextMenu();
+    const wrap = document.createElement("div");
+    wrap.className = "reaction-picker";
+    wrap.id = "ctx-menu";
+    const recent = lsGet(RECENT_REACTIONS_KEY, []);
+    const renderBody = (filter = "") => {
+      wrap.querySelector(".rp-body").innerHTML = "";
+      const body = wrap.querySelector(".rp-body");
+      const f = filter.trim().toLowerCase();
+      Object.entries(EMOJI_CATEGORIES).forEach(([cat, list]) => {
+        const items = f ? list.filter(e => e.includes(f)) : list;
+        if (!items.length) return;
+        const title = document.createElement("div");
+        title.className = "rp-title";
+        title.textContent = cat;
+        body.appendChild(title);
+        const grid = document.createElement("div");
+        grid.className = "rp-grid";
+        items.forEach(e => {
+          const b = document.createElement("button");
+          b.className = "rp-emoji";
+          b.textContent = e;
+          b.addEventListener("click", () => {
+            pushRecent(RECENT_REACTIONS_KEY, e);
+            this.toggleReaction(msg.id, e);
+            this.closeContextMenu();
+          });
+          grid.appendChild(b);
+        });
+        body.appendChild(grid);
+      });
+    };
+    wrap.innerHTML = `
+      <div class="rp-search"><input placeholder="Поиск реакции…"></div>
+      <div class="rp-recent"></div>
+      <div class="rp-body"></div>`;
+    if (recent.length) {
+      const rc = wrap.querySelector(".rp-recent");
+      rc.innerHTML = `<div class="rp-title">Недавние</div>`;
+      const grid = document.createElement("div");
+      grid.className = "rp-grid";
+      recent.slice(0, 12).forEach(e => {
+        const b = document.createElement("button");
+        b.className = "rp-emoji"; b.textContent = e;
+        b.addEventListener("click", () => {
+          pushRecent(RECENT_REACTIONS_KEY, e);
+          this.toggleReaction(msg.id, e);
+          this.closeContextMenu();
+        });
+        grid.appendChild(b);
+      });
+      rc.appendChild(grid);
+    }
+    renderBody();
+    const inp = wrap.querySelector("input");
+    inp.addEventListener("input", () => {
+      wrap.querySelector(".rp-recent").innerHTML = "";
+      renderBody(inp.value);
+    });
+    document.body.appendChild(wrap);
+    const r = event.target.getBoundingClientRect();
+    wrap.style.left = Math.min(r.left, window.innerWidth - 340) + "px";
+    wrap.style.top = Math.max(10, Math.min(r.top - 40, window.innerHeight - 400)) + "px";
+    setTimeout(() => {
+      document.addEventListener("click", (ev) => {
+        if (!wrap.contains(ev.target)) this.closeContextMenu();
+      }, { once: true });
+    }, 0);
+  }
+
+  /* ============================================================
+     ПАНЕЛЬ ПРОГОЛОСОВАВШИХ
+     ============================================================ */
+  showReactionVoters(messageId, emoji) {
+    const uids = this.reactions[messageId]?.[emoji] || [];
+    if (!uids.length) return;
+    this.openModal({
+      title: `Реакция ${emoji}`,
+      narrow: true,
+      body: (body) => {
+        const list = document.createElement("div");
+        list.className = "voters-list";
+        uids.forEach(uid => {
+          const u = this.members.find(mm => mm.user_id === uid) ||
+                    (uid === this.user.id ? this.profile : null);
+          const name = uid === this.user.id ? (this.profile?.username || "Ты") : (u?.username || "User");
+          const row = document.createElement("div");
+          row.className = "voter-row";
+          row.innerHTML = `
+            ${avatarHTML(u || { username: name }, "sm")}
+            <span class="voter-name">${escapeHtml(name)}</span>`;
+          list.appendChild(row);
+        });
+        body.appendChild(list);
+      },
+    });
+  }
+
+  /* ============================================================
+     EMOJI / STICKER PICKER
+     ============================================================ */
+  openPicker(initialTab = "emoji") {
+    const existing = $("picker");
+    if (existing) { existing.remove(); this._activePicker = null; return; }
+    const picker = document.createElement("div");
+    picker.id = "picker"; picker.className = "picker";
+    picker.innerHTML = `
+      <div class="picker-tabs"></div>
+      <div class="picker-search"><input placeholder="Поиск…"></div>
+      <div class="picker-body"></div>`;
+    document.querySelector(".chat-view").appendChild(picker);
+    this._activePicker = picker;
+
+    const tabs = picker.querySelector(".picker-tabs");
+    const searchWrap = picker.querySelector(".picker-search");
+    const searchInp = searchWrap.querySelector("input");
+    const body = picker.querySelector(".picker-body");
+
+    const renderEmojiCat = (cat, filter = "") => {
+      body.className = "picker-body";
+      body.innerHTML = "";
+      const f = filter.trim().toLowerCase();
+      let catsToShow = cat === "*" ? Object.keys(EMOJI_CATEGORIES) : [cat];
+      catsToShow.forEach(cName => {
+        let items = EMOJI_CATEGORIES[cName] || [];
+        if (f) items = items.filter(e => e.includes(f));
+        if (!items.length) return;
+        const title = document.createElement("div");
+        title.className = "rp-title";
+        title.textContent = cName;
+        body.appendChild(title);
+        const grid = document.createElement("div");
+        grid.className = "rp-grid";
+        items.forEach(e => {
+          const b = document.createElement("button");
+          b.className = "rp-emoji";
+          b.textContent = e;
+          b.addEventListener("click", () => {
+            this.insertAtCursor($("composer"), e);
+            pushRecent(RECENT_EMOJI_KEY, e);
+          });
+          grid.appendChild(b);
+        });
+        body.appendChild(grid);
+      });
+      if (!body.children.length) {
+        body.innerHTML = `<div class="empty-state">Ничего не найдено</div>`;
+      }
+    };
+    const renderRecent = (filter = "") => {
+      const recent = lsGet(RECENT_EMOJI_KEY, []);
+      body.className = "picker-body";
+      body.innerHTML = "";
+      const items = filter ? recent.filter(e => e.includes(filter)) : recent;
+      if (!items.length) {
+        body.innerHTML = `<div class="empty-state">Пока ничего нет</div>`;
+        return;
+      }
+      const grid = document.createElement("div");
+      grid.className = "rp-grid";
+      items.forEach(e => {
+        const b = document.createElement("button");
+        b.className = "rp-emoji";
+        b.textContent = e;
+        b.addEventListener("click", () => {
+          this.insertAtCursor($("composer"), e);
+          pushRecent(RECENT_EMOJI_KEY, e);
+        });
+        grid.appendChild(b);
+      });
+      body.appendChild(grid);
+    };
+    const renderStickers = async () => {
+      body.className = "picker-body stickers";
+      body.innerHTML = "";
+      SYSTEM_STICKERS.forEach(s => {
+        const tt = document.createElement("div");
+        tt.className = "picker-sticker";
+        const img = document.createElement("img"); img.src = s.url; img.alt = s.name;
+        tt.appendChild(img);
+        tt.addEventListener("click", () => { picker.remove(); this._activePicker = null; this.sendSticker(s.id, s.url); });
+        body.appendChild(tt);
+      });
+      try {
+        const { data: custom } = await supabase.from("stickers")
+          .select("id, name, url").order("created_at", { ascending: false });
+        (custom || []).forEach(s => {
+          const tt = document.createElement("div");
+          tt.className = "picker-sticker";
+          const img = document.createElement("img"); img.src = s.url; img.alt = s.name;
+          tt.appendChild(img);
+          tt.addEventListener("click", () => { picker.remove(); this._activePicker = null; this.sendSticker(s.id, s.url); });
+          body.appendChild(tt);
+        });
+      } catch (_) {}
+    };
+
+    const addTab = (label, onClick) => {
+      const b = document.createElement("button");
+      b.className = "picker-tab"; b.textContent = label;
+      b.addEventListener("click", () => {
+        tabs.querySelectorAll(".picker-tab").forEach(x => x.classList.remove("active"));
+        b.classList.add("active");
+        searchInp.value = "";
+        onClick();
+      });
+      tabs.appendChild(b);
+      return b;
+    };
+
+    addTab("⏱", () => { searchWrap.style.display = ""; renderRecent(); });
+    Object.keys(EMOJI_CATEGORIES).forEach((cat, idx) => {
+      const tt = addTab(cat, () => { searchWrap.style.display = ""; renderEmojiCat(cat); });
+      if (idx === 0) tt.classList.add("active");
+    });
+    addTab("🎨 Стикеры", () => { searchWrap.style.display = "none"; renderStickers(); });
+    addTab("🔍", () => { searchWrap.style.display = ""; renderEmojiCat("*"); });
+
+    renderEmojiCat(Object.keys(EMOJI_CATEGORIES)[0]);
+    const activeTab = [...tabs.children].find(c => c.classList.contains("active"));
+    if (activeTab) activeTab.classList.add("active");
+
+    searchInp.addEventListener("input", () => {
+      const activeLabel = tabs.querySelector(".picker-tab.active")?.textContent || "";
+      if (activeLabel === "⏱") renderRecent(searchInp.value);
+      else if (activeLabel === "🎨 Стикеры") return;
+      else renderEmojiCat("*", searchInp.value);
+    });
+
+    /* Клик снаружи — закрыть */
+    setTimeout(() => {
+      document.addEventListener("click", (ev) => {
+        const p = $("picker");
+        if (p && !p.contains(ev.target) && !ev.target.closest("#btn-emoji") && !ev.target.closest("#btn-sticker")) {
+          p.remove();
+          this._activePicker = null;
+        }
+      }, { once: true });
+    }, 0);
+  }
+  insertAtCursor(input, text) {
+    if (!input) return;
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? input.value.length;
+    input.value = input.value.slice(0, start) + text + input.value.slice(end);
+    const pos = start + text.length;
+    input.selectionStart = input.selectionEnd = pos;
+    input.focus();
+    /* autosize */
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight, 160) + "px";
+  }
+
+  async sendSticker(stickerId, stickerUrl) {
+    if (!this.activeChat) return;
+    try {
+      const payload = {
+        chat_id: this.activeChat.id, sender_id: this.user.id,
+        content: "", kind: "sticker", sticker_id: stickerId,
+        reply_to: this.pendingReplyTo?.id || null,
+      };
+      if (!stickerId.startsWith("sys-")) payload.attachment_url = stickerUrl;
+      const { data, error } = await supabase.from("messages").insert(payload).select().single();
+      if (error) throw error;
+      if (!this.messages.find(m => m.id === data.id)) {
+        this.messages.push(data); this.paintMessageWindow();
+      }
+      this.hideReplyPreview();
+      this.scheduleRefreshChats();
+      Sounds.send();
+    } catch (e) { console.error(e); toast("Ошибка стикера", "error"); }
+  }
+
+  /* ============================================================
+     CONTEXT ACTIONS
+     ============================================================ */
   closeContextMenu() { const m = $("ctx-menu"); if (m) m.remove(); }
   setReplyTo(msg) {
     this.pendingReplyTo = msg;
@@ -1974,6 +2379,98 @@ class NEXORA {
         });
       },
     });
+  }
+  async editMessage(msg) {
+    const newText = prompt("Новый текст:", msg.content);
+    if (newText === null || !newText.trim()) return;
+    try {
+      const { data, error } = await supabase
+        .from("messages")
+        .update({ content: newText.trim(), edited_at: new Date().toISOString() })
+        .eq("id", msg.id).select().single();
+      if (error) throw error;
+      const i = this.messages.findIndex(m => m.id === msg.id);
+      if (i >= 0) this.messages[i] = data;
+      this.paintMessageWindow();
+      toast("Изменено", "success");
+      Sounds.click();
+    } catch (e) { toast("Ошибка", "error"); }
+  }
+  async deleteMessageForMe(msg) {
+    if (!confirm("Удалить сообщение у себя? Другие его увидят.")) return;
+    this.markHidden(msg.id);
+    this.messages = this.messages.filter(m => m.id !== msg.id);
+    this.paintMessageWindow();
+    toast("Удалено у тебя", "success");
+    Sounds.click();
+  }
+  async deleteMessageForEveryone(msg) {
+    if (!confirm("Удалить сообщение у всех? Действие необратимо.")) return;
+    try {
+      const { error } = await supabase.rpc("delete_message_for_everyone", { p_message_id: msg.id });
+      if (error) throw error;
+      /* realtime сам обновит, но на всякий случай локально */
+      const i = this.messages.findIndex(m => m.id === msg.id);
+      if (i >= 0) {
+        this.messages[i].deleted_at = new Date().toISOString();
+        this.messages[i].deleted_by = this.user.id;
+        this.paintMessageWindow();
+      }
+      toast("Удалено у всех", "success");
+      Sounds.click();
+    } catch (e) { toast(e.message || "Ошибка", "error"); }
+  }
+  async deleteMessage(msg) {
+    /* legacy-обёртка: теперь у нас есть «у себя» и «у всех» */
+    return this.deleteMessageForMe(msg);
+  }
+  async toggleReaction(messageId, emoji) {
+    try {
+      const { data: existing } = await supabase
+        .from("reactions").select("message_id")
+        .eq("message_id", messageId).eq("user_id", this.user.id).eq("emoji", emoji)
+        .maybeSingle();
+      if (existing) {
+        await supabase.from("reactions").delete()
+          .eq("message_id", messageId).eq("user_id", this.user.id).eq("emoji", emoji);
+      } else {
+        await supabase.from("reactions").insert({
+          message_id: messageId, user_id: this.user.id, emoji,
+        });
+      }
+      Sounds.click();
+      await this.loadReactions();
+      this.paintMessageWindow();
+    } catch (e) { console.error(e); }
+  }
+  async saveToFavorites(msg) {
+    try {
+      const { error } = await supabase.from("favorites").insert({
+        owner_id: this.user.id, message_id: msg.id, chat_id: this.activeChat.id,
+      });
+      if (error && error.code !== "23505") throw error;
+      toast("Сохранено в избранное", "success");
+      Sounds.success();
+    } catch (e) { toast("Ошибка", "error"); }
+  }
+  async copyMessageLink(msg) {
+    try {
+      const url = `${location.origin}${location.pathname}?chat=${this.activeChat.id}&msg=${msg.id}`;
+      await navigator.clipboard.writeText(url);
+      toast("Ссылка на сообщение скопирована", "success");
+      Sounds.success();
+    } catch (e) { toast("Не удалось скопировать", "error"); }
+  }
+  async openMessageFromLink(chatId, msgId) {
+    await this.openChatById(chatId);
+    setTimeout(() => {
+      const el = document.querySelector(`[data-message-id="${msgId}"]`);
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        el.classList.add("msg-link-highlight");
+        setTimeout(() => el.classList.remove("msg-link-highlight"), 2500);
+      }
+    }, 400);
   }
 
   /* ============================================================
@@ -2066,15 +2563,11 @@ class NEXORA {
             <button class="btn btn-ghost" id="pl-cancel">${t("cancel")}</button>
             <button class="btn btn-primary" id="pl-create">${t("createPoll")}</button>
           </div>`;
-
         const optsBox = body.querySelector("#pl-options");
         const correctSel = body.querySelector("#pl-correct");
         const correctWrap = body.querySelector("#pl-correct-wrap");
-
         const refreshCorrect = () => {
-          const vals = [...optsBox.querySelectorAll("input")]
-            .map(i => i.value.trim())
-            .filter(Boolean);
+          const vals = [...optsBox.querySelectorAll("input")].map(i => i.value.trim()).filter(Boolean);
           correctSel.innerHTML = "";
           vals.forEach((v, i) => {
             const o = document.createElement("option");
@@ -2083,37 +2576,24 @@ class NEXORA {
             correctSel.appendChild(o);
           });
         };
-
         const addOpt = (value = "") => {
           const row = document.createElement("div");
           row.style.cssText = "display:flex;gap:8px;align-items:center;margin-bottom:6px";
           const inp = document.createElement("input");
-          inp.placeholder = "Вариант";
-          inp.maxLength = 100;
-          inp.value = value;
+          inp.placeholder = "Вариант"; inp.maxLength = 100; inp.value = value;
           inp.addEventListener("input", refreshCorrect);
           const del = document.createElement("button");
-          del.className = "icon-btn";
-          del.textContent = "✕";
-          del.addEventListener("click", () => {
-            row.remove();
-            refreshCorrect();
-          });
-          row.appendChild(inp);
-          row.appendChild(del);
-          optsBox.appendChild(row);
-          refreshCorrect();
+          del.className = "icon-btn"; del.textContent = "✕";
+          del.addEventListener("click", () => { row.remove(); refreshCorrect(); });
+          row.appendChild(inp); row.appendChild(del);
+          optsBox.appendChild(row); refreshCorrect();
         };
-
-        addOpt();
-        addOpt();
-
+        addOpt(); addOpt();
         body.querySelector("#pl-add").addEventListener("click", () => {
           const count = optsBox.querySelectorAll("input").length;
           if (count >= 10) return toast("Максимум 10 вариантов", "warning");
           addOpt();
         });
-
         body.querySelector("#pl-quiz").addEventListener("change", (e) => {
           correctWrap.style.display = e.target.checked ? "block" : "none";
           if (e.target.checked) {
@@ -2124,30 +2604,24 @@ class NEXORA {
           } else {
             const anon = body.querySelector("#pl-anon");
             const multi = body.querySelector("#pl-multiple");
-            anon.disabled = false;
-            multi.disabled = false;
+            anon.disabled = false; multi.disabled = false;
           }
         });
-
         body.querySelector("#pl-cancel").addEventListener("click", () => this.closeModal());
         body.querySelector("#pl-create").addEventListener("click", async () => {
           const errEl = body.querySelector("#pl-error");
           errEl.classList.remove("show");
           const question = body.querySelector("#pl-question").value.trim();
-          const options = [...optsBox.querySelectorAll("input")]
-            .map(i => i.value.trim())
-            .filter(Boolean);
+          const options = [...optsBox.querySelectorAll("input")].map(i => i.value.trim()).filter(Boolean);
           const isQuiz = body.querySelector("#pl-quiz").checked;
           const isAnon = body.querySelector("#pl-anon").checked;
           const allowsMultiple = body.querySelector("#pl-multiple").checked;
           const correctIndex = isQuiz ? parseInt(correctSel.value, 10) : null;
-
           if (!question) { errEl.textContent = "Введи вопрос"; errEl.classList.add("show"); return; }
           if (options.length < 2) { errEl.textContent = "Минимум 2 варианта"; errEl.classList.add("show"); return; }
           if (isQuiz && (correctIndex == null || isNaN(correctIndex))) {
             errEl.textContent = "Выбери правильный вариант"; errEl.classList.add("show"); return;
           }
-
           const btn = body.querySelector("#pl-create");
           btn.disabled = true; btn.textContent = "Создаём…";
           try {
@@ -2161,19 +2635,17 @@ class NEXORA {
               p_allows_multiple: allowsMultiple,
             });
             if (error) throw error;
-
             this.closeModal();
             Sounds.success();
             toast("Опрос создан", "success");
-
             try {
               const { data: msgs } = await supabase
                 .from("messages")
-                .select("id, chat_id, sender_id, content, kind, sticker_id, attachment_url, attachment_type, file_name, file_size, edited_at, created_at, reply_to, pinned, pinned_at, channel_post_id, expires_at")
+                .select("id, chat_id, sender_id, content, kind, sticker_id, attachment_url, attachment_type, file_name, file_size, edited_at, created_at, reply_to, pinned, pinned_at, channel_post_id, expires_at, deleted_at, deleted_by")
                 .eq("chat_id", this.activeChat.id)
                 .order("created_at", { ascending: true })
                 .limit(500);
-              if (msgs) this.messages = msgs;
+              if (msgs) this.messages = msgs.filter(m => !this.hiddenMsgs.has(m.id));
             } catch (_) {}
             await this.loadPolls();
             this.paintMessageWindow();
@@ -2323,66 +2795,6 @@ class NEXORA {
   }
 
   /* ============================================================
-     EDIT / DELETE / REACTIONS / FAVORITES
-     ============================================================ */
-  async editMessage(msg) {
-    const newText = prompt("Новый текст:", msg.content);
-    if (newText === null || !newText.trim()) return;
-    try {
-      const { data, error } = await supabase
-        .from("messages")
-        .update({ content: newText.trim(), edited_at: new Date().toISOString() })
-        .eq("id", msg.id).select().single();
-      if (error) throw error;
-      const i = this.messages.findIndex(m => m.id === msg.id);
-      if (i >= 0) this.messages[i] = data;
-      this.paintMessageWindow();
-      toast("Изменено", "success");
-      Sounds.click();
-    } catch (e) { toast("Ошибка", "error"); }
-  }
-  async deleteMessage(msg) {
-    if (!confirm("Удалить сообщение?")) return;
-    try {
-      const { error } = await supabase.from("messages").delete().eq("id", msg.id);
-      if (error) throw error;
-      this.messages = this.messages.filter(m => m.id !== msg.id);
-      this.paintMessageWindow();
-      toast("Удалено", "success");
-      Sounds.click();
-    } catch (e) { toast("Ошибка", "error"); }
-  }
-  async toggleReaction(messageId, emoji) {
-    try {
-      const { data: existing } = await supabase
-        .from("reactions").select("message_id")
-        .eq("message_id", messageId).eq("user_id", this.user.id).eq("emoji", emoji)
-        .maybeSingle();
-      if (existing) {
-        await supabase.from("reactions").delete()
-          .eq("message_id", messageId).eq("user_id", this.user.id).eq("emoji", emoji);
-      } else {
-        await supabase.from("reactions").insert({
-          message_id: messageId, user_id: this.user.id, emoji,
-        });
-      }
-      Sounds.click();
-      await this.loadReactions();
-      this.paintMessageWindow();
-    } catch (e) { console.error(e); }
-  }
-  async saveToFavorites(msg) {
-    try {
-      const { error } = await supabase.from("favorites").insert({
-        owner_id: this.user.id, message_id: msg.id, chat_id: this.activeChat.id,
-      });
-      if (error && error.code !== "23505") throw error;
-      toast("Сохранено в избранное", "success");
-      Sounds.success();
-    } catch (e) { toast("Ошибка", "error"); }
-  }
-
-  /* ============================================================
      ATTACHMENTS
      ============================================================ */
   async pickAttachment() {
@@ -2402,7 +2814,8 @@ class NEXORA {
         if (upErr) throw upErr;
         const { data: pub } = supabase.storage.from(ATTACH_BUCKET).getPublicUrl(path);
         const kind = file.type.startsWith("image/") ? "image"
-                  : file.type.startsWith("video/") ? "video" : "file";
+                  : file.type.startsWith("video/") ? "video"
+                  : file.type.startsWith("audio/") ? "file" : "file";
         this.pendingAttachment = { url: pub.publicUrl, kind, name: file.name, size: file.size };
         $("attach-label").textContent = `📎 ${file.name} (${humanSize(file.size)}) — Enter для отправки`;
         $("attach-bar").classList.remove("hidden");
@@ -2421,7 +2834,7 @@ class NEXORA {
   }
 
   /* ============================================================
-     VOICE RECORDING (без транскрипта — SpeechRecognition не работает с blob)
+     VOICE RECORDING
      ============================================================ */
   async toggleVoiceRecording() {
     if (this._recorder && this._recorder.state === "recording") {
@@ -2484,96 +2897,6 @@ class NEXORA {
       Sounds.send();
       toast("Голосовое отправлено", "success");
     } catch (e) { toast("Ошибка голосового: " + (e.message || ""), "error"); }
-  }
-
-  /* ============================================================
-     PICKER (emoji / stickers)
-     ============================================================ */
-  openPicker() {
-    const existing = $("picker");
-    if (existing) { existing.remove(); return; }
-    const picker = document.createElement("div");
-    picker.id = "picker"; picker.className = "picker";
-    const tabs = document.createElement("div");
-    tabs.className = "picker-tabs"; picker.appendChild(tabs);
-    const body = document.createElement("div");
-    body.className = "picker-body"; picker.appendChild(body);
-    document.querySelector(".chat-view").appendChild(picker);
-    const addTab = (label, onClick) => {
-      const b = document.createElement("button");
-      b.className = "picker-tab"; b.textContent = label;
-      b.addEventListener("click", () => {
-        tabs.querySelectorAll(".picker-tab").forEach(x => x.classList.remove("active"));
-        b.classList.add("active");
-        onClick();
-      });
-      tabs.appendChild(b);
-      return b;
-    };
-    Object.keys(EMOJI).forEach((cat, idx) => {
-      const tt = addTab(cat, () => renderEmojiCat(cat));
-      if (idx === 0) { tt.classList.add("active"); renderEmojiCat(cat); }
-    });
-    addTab("🎨 " + t("emojiPacks"), () => renderStickers());
-    function renderEmojiCat(cat) {
-      body.className = "picker-body"; body.innerHTML = "";
-      (EMOJI[cat] || []).forEach(e => {
-        const b = document.createElement("button");
-        b.className = "picker-emoji"; b.textContent = e;
-        b.addEventListener("click", () => {
-          const composer = $("composer");
-          composer.value += e; composer.focus();
-        });
-        body.appendChild(b);
-      });
-    }
-    async function renderStickers() {
-      body.className = "picker-body stickers"; body.innerHTML = "";
-      SYSTEM_STICKERS.forEach(s => {
-        const tt = document.createElement("div");
-        tt.className = "picker-sticker";
-        const img = document.createElement("img"); img.src = s.url; img.alt = s.name;
-        tt.appendChild(img);
-        tt.addEventListener("click", () => { picker.remove(); this.sendSticker(s.id, s.url); });
-        body.appendChild(tt);
-      });
-      try {
-        const { data: custom } = await supabase.from("stickers")
-          .select("id, name, url").order("created_at", { ascending: false });
-        (custom || []).forEach(s => {
-          const tt = document.createElement("div");
-          tt.className = "picker-sticker";
-          const img = document.createElement("img"); img.src = s.url; img.alt = s.name;
-          tt.appendChild(img);
-          tt.addEventListener("click", () => { picker.remove(); this.sendSticker(s.id, s.url); });
-          body.appendChild(tt);
-        });
-      } catch (_) {}
-    }
-    setTimeout(() => {
-      document.addEventListener("click", (ev) => {
-        if (!picker.contains(ev.target) && !ev.target.closest("#btn-emoji")) picker.remove();
-      }, { once: true });
-    }, 0);
-  }
-  async sendSticker(stickerId, stickerUrl) {
-    if (!this.activeChat) return;
-    try {
-      const payload = {
-        chat_id: this.activeChat.id, sender_id: this.user.id,
-        content: "", kind: "sticker", sticker_id: stickerId,
-        reply_to: this.pendingReplyTo?.id || null,
-      };
-      if (!stickerId.startsWith("sys-")) payload.attachment_url = stickerUrl;
-      const { data, error } = await supabase.from("messages").insert(payload).select().single();
-      if (error) throw error;
-      if (!this.messages.find(m => m.id === data.id)) {
-        this.messages.push(data); this.paintMessageWindow();
-      }
-      this.hideReplyPreview();
-      this.scheduleRefreshChats();
-      Sounds.send();
-    } catch (e) { console.error(e); toast("Ошибка стикера", "error"); }
   }
 
   /* ============================================================
@@ -2659,7 +2982,7 @@ class NEXORA {
   }
 
   /* ============================================================
-     REALTIME — ГЛОБАЛЬНЫЕ ПОДПИСКИ (живут всё время сессии)
+     REALTIME — ГЛОБАЛЬНЫЕ ПОДПИСКИ
      ============================================================ */
   subscribeProfiles() {
     supabase.channel("profiles-watch")
@@ -2679,15 +3002,10 @@ class NEXORA {
         this.notify(title, m.content || "Новое сообщение");
         Sounds.message();
       })
-      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages" }, (p) => {
-        const m = p.new;
-        if (!m) return;
-        /* Обновление последнего сообщения в списке чатов (если редактировали) */
+      .on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages" }, () => {
         this.scheduleRefreshChats(500);
       })
-      .on("postgres_changes", { event: "DELETE", schema: "public", table: "messages" }, (p) => {
-        const m = p.old;
-        if (!m) return;
+      .on("postgres_changes", { event: "DELETE", schema: "public", table: "messages" }, () => {
         this.scheduleRefreshChats(500);
       })
       .on("postgres_changes", { event: "*", schema: "public", table: "chat_reads" },
@@ -2698,7 +3016,6 @@ class NEXORA {
     if (this._chMembersChannel) supabase.removeChannel(this._chMembersChannel);
     this._chMembersChannel = supabase.channel("global-chat-members")
       .on("postgres_changes", { event: "*", schema: "public", table: "chat_members" }, (p) => {
-        /* Нас добавили/удалили/сменили роль в чате */
         this.scheduleRefreshChats(400);
         if (this.activeChat && p.new && p.new.chat_id === this.activeChat.id) {
           this.scheduleReloadMembers(300);
@@ -2713,7 +3030,6 @@ class NEXORA {
     if (this._chChatsChannel) supabase.removeChannel(this._chChatsChannel);
     this._chChatsChannel = supabase.channel("global-chats")
       .on("postgres_changes", { event: "UPDATE", schema: "public", table: "chats" }, () => {
-        /* Изменилось название/описание/is_public/username/invite_token — обновим список */
         this.scheduleRefreshChats(400);
       })
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "chats" }, () => {
@@ -2727,7 +3043,6 @@ class NEXORA {
       .on("postgres_changes", { event: "INSERT", schema: "public", table: "reactions" }, (p) => {
         const r = p.new;
         if (!r) return;
-        /* Обновляем только если это сообщение из активного чата */
         if (!this.messages.find(m => m.id === r.message_id)) return;
         if (!this.reactions[r.message_id]) this.reactions[r.message_id] = {};
         if (!this.reactions[r.message_id][r.emoji]) this.reactions[r.message_id][r.emoji] = [];
@@ -2753,10 +3068,7 @@ class NEXORA {
   subscribeGlobalCustomEmojis() {
     if (this._chEmojisChannel) supabase.removeChannel(this._chEmojisChannel);
     this._chEmojisChannel = supabase.channel("global-custom-emojis")
-      .on("postgres_changes", { event: "*", schema: "public", table: "custom_emojis" }, () => {
-        /* Пикер эмодзи подтянет свежие данные при следующем открытии.
-           Если открыт пак-редактор — оставим как есть, там свой список. */
-      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "custom_emojis" }, () => {})
       .subscribe();
   }
   stopGlobalRealtime() {
@@ -2771,6 +3083,7 @@ class NEXORA {
   }
   onRealtimeInsert(m) {
     if (!this.activeChat || m.chat_id !== this.activeChat.id) return;
+    if (this.hiddenMsgs.has(m.id)) return;
     if (this.messages.find(x => x.id === m.id)) return;
     if (m.sender_id === this.user.id) return;
     this.messages.push(m);
@@ -2782,12 +3095,27 @@ class NEXORA {
   onRealtimeUpdate(m) {
     if (!this.activeChat || m.chat_id !== this.activeChat.id) return;
     const i = this.messages.findIndex(x => x.id === m.id);
-    if (i >= 0) { this.messages[i] = m; this.paintMessageWindow(); }
+    if (i >= 0) {
+      /* soft delete в реальном времени: анимация + перерисовка */
+      const wasDeleted = !!this.messages[i].deleted_at;
+      this.messages[i] = m;
+      if (m.deleted_at && !wasDeleted) {
+        const el = document.querySelector(`[data-message-id="${m.id}"]`);
+        if (el) el.classList.add("msg-removing");
+        setTimeout(() => {
+          this.paintMessageWindow();
+        }, 220);
+      } else {
+        this.paintMessageWindow();
+      }
+    }
   }
   onRealtimeDelete(m) {
     if (!this.activeChat) return;
+    const el = document.querySelector(`[data-message-id="${m.id}"]`);
+    if (el) el.classList.add("msg-removing");
     this.messages = this.messages.filter(x => x.id !== m.id);
-    this.paintMessageWindow();
+    setTimeout(() => this.paintMessageWindow(), 180);
   }
   onProfileUpdate(p) {
     if (this.activePeer && this.activePeer.id === p.id) {
@@ -2797,7 +3125,8 @@ class NEXORA {
                           this.activeChat.type === "group" ? `<span class="list-item-badge-icon">${ICONS.group}</span>` :
                           this.activeChat.type === "saved" ? `<span class="list-item-badge-icon">${ICONS.star}</span>` : "";
         const botTag = this.activePeer.is_bot ? ' <span class="bot-badge">[BOT]</span>' : "";
-        $("chat-peer-name").innerHTML = `${badgeHTML}${escapeHtml(this.activeChat.display_title || p.username)}${botTag}
+        const badgeEmoji = this.activePeer.badge_emoji ? `<span style="margin-left:6px">${escapeHtml(this.activePeer.badge_emoji)}</span>` : "";
+        $("chat-peer-name").innerHTML = `${badgeHTML}${escapeHtml(this.activeChat.display_title || p.username)}${badgeEmoji}${botTag}
           <span class="online-dot${this.isPeerOnline(this.activeChat) ? " online" : ""}"></span>`;
       }
     }
@@ -2816,7 +3145,9 @@ class NEXORA {
           .select("*").eq("chat_id", chatId).gt("created_at", lastIso)
           .order("created_at", { ascending: true });
         if (data && data.length) {
-          data.forEach(m => { if (!this.messages.find(x => x.id === m.id)) this.messages.push(m); });
+          data.forEach(m => {
+            if (!this.messages.find(x => x.id === m.id) && !this.hiddenMsgs.has(m.id)) this.messages.push(m);
+          });
           lastIso = data[data.length - 1].created_at;
           this.paintMessageWindow();
         }
@@ -3121,28 +3452,9 @@ class NEXORA {
       }
     } catch (_) {}
   }
-  async copyMessageLink(msg) {
-    try {
-      const url = `${location.origin}${location.pathname}?chat=${this.activeChat.id}&msg=${msg.id}`;
-      await navigator.clipboard.writeText(url);
-      toast("Ссылка на сообщение скопирована", "success");
-      Sounds.success();
-    } catch (e) { toast("Не удалось скопировать", "error"); }
-  }
-  async openMessageFromLink(chatId, msgId) {
-    await this.openChatById(chatId);
-    setTimeout(() => {
-      const el = document.querySelector(`[data-message-id="${msgId}"]`);
-      if (el) {
-        el.scrollIntoView({ behavior: "smooth", block: "center" });
-        el.classList.add("msg-link-highlight");
-        setTimeout(() => el.classList.remove("msg-link-highlight"), 2500);
-      }
-    }, 400);
-  }
 
   /* ============================================================
-     COMMENTS
+     COMMENTS (исправлено)
      ============================================================ */
   openCommentsFor(msg) {
     this.openModal({
@@ -3152,28 +3464,34 @@ class NEXORA {
         let comments = [];
         try {
           const { data } = await supabase
-            .from("messages").select("id, sender_id, content, created_at")
+            .from("messages").select("id, sender_id, content, created_at, deleted_at")
             .eq("channel_post_id", msg.id)
             .order("created_at", { ascending: true }).limit(200);
           comments = data || [];
         } catch (_) {}
         body.innerHTML = "";
-        if (!comments.length) {
-          body.innerHTML = `<p class="muted">Комментариев пока нет. Будь первым!</p>`;
-        } else {
-          comments.forEach(c => {
-            const sender = this.members.find(x => x.user_id === c.sender_id);
-            const name = c.sender_id === this.user.id ? "Ты" : (sender?.username || "User");
-            const row = document.createElement("div");
-            row.className = "comment-row";
-            row.innerHTML = `
-              <div class="comment-author">${escapeHtml(name)}
-                <span class="comment-time">${escapeHtml(formatTime(c.created_at))}</span>
-              </div>
-              <div class="comment-body">${renderMarkdown(c.content)}</div>`;
-            body.appendChild(row);
-          });
-        }
+        const renderComments = (list) => {
+          body.innerHTML = "";
+          if (!list.length) {
+            body.innerHTML = `<p class="muted">Комментариев пока нет. Будь первым!</p>`;
+          } else {
+            list.forEach(c => {
+              const sender = this.members.find(x => x.user_id === c.sender_id);
+              const name = c.sender_id === this.user.id ? "Ты" : (sender?.username || "User");
+              const row = document.createElement("div");
+              row.className = "comment-row";
+              if (c.deleted_at) row.classList.add("deleted");
+              row.innerHTML = `
+                <div class="comment-author">${escapeHtml(name)}
+                  <span class="comment-time">${escapeHtml(formatTime(c.created_at))}</span>
+                </div>
+                <div class="comment-body">${c.deleted_at ? '<em style="opacity:.6">Сообщение удалено</em>' : renderMarkdown(c.content)}</div>`;
+              body.appendChild(row);
+            });
+          }
+        };
+        renderComments(comments);
+
         const input = document.createElement("input");
         input.placeholder = "Написать комментарий…";
         input.style.marginTop = "14px";
@@ -3195,18 +3513,36 @@ class NEXORA {
             if (error) throw error;
             input.value = "";
             toast("Комментарий добавлен", "success");
-            const newRow = document.createElement("div");
-            newRow.className = "comment-row";
-            newRow.innerHTML = `
-              <div class="comment-author">Ты
-                <span class="comment-time">${escapeHtml(formatTime(data.created_at))}</span>
-              </div>
-              <div class="comment-body">${renderMarkdown(text)}</div>`;
-            body.insertBefore(newRow, input);
+            comments.push(data);
+            renderComments(comments);
           } catch (e) { toast(e.message || "Ошибка", "error"); }
         });
         body.appendChild(input);
         body.appendChild(send);
+
+        /* Realtime-подписка на комментарии именно этого поста */
+        const ch = supabase.channel("comments:" + msg.id)
+          .on("postgres_changes", {
+            event: "*", schema: "public", table: "messages",
+            filter: `channel_post_id=eq.${msg.id}`,
+          }, async () => {
+            try {
+              const { data } = await supabase
+                .from("messages").select("id, sender_id, content, created_at, deleted_at")
+                .eq("channel_post_id", msg.id)
+                .order("created_at", { ascending: true }).limit(200);
+              comments = data || [];
+              renderComments(comments);
+            } catch (_) {}
+          })
+          .subscribe();
+        /* Отписываемся при закрытии модалки */
+        const origClose = this.closeModal.bind(this);
+        this.closeModal = () => {
+          try { supabase.removeChannel(ch); } catch (_) {}
+          this.closeModal = origClose;
+          origClose();
+        };
       },
     });
   }
@@ -3726,7 +4062,37 @@ class NEXORA {
           this.closeModal();
           setTimeout(() => this.openActivityDialog(), 100);
         }, t("edit")));
+        profileSec.appendChild(this.row("Значок рядом с именем", this.profile.badge_emoji || "не выбран", () => {
+          this.closeModal();
+          setTimeout(() => this.openBadgePicker(), 100);
+        }, t("edit")));
+        profileSec.appendChild(this.row("Соц-ссылки", "Профиль", () => {
+          this.closeModal();
+          setTimeout(() => this.openSocialLinksEditor(), 100);
+        }, t("edit")));
         body.appendChild(profileSec);
+
+        /* Статус */
+        const statusSec = document.createElement("div");
+        statusSec.className = "settings-section";
+        statusSec.innerHTML = `<h3>🟢 Статус</h3>`;
+        const statusRow = document.createElement("div");
+        statusRow.className = "settings-row";
+        const cur = this.profile.status || "online";
+        statusRow.innerHTML = `<div class="settings-row-info">
+          <div class="settings-row-label">${escapeHtml(STATUS_META[cur]?.label || "В сети")}</div>
+          <div class="settings-row-desc">Виден другим пользователям</div>
+        </div>`;
+        const statusBtn = document.createElement("button");
+        statusBtn.className = "btn btn-ghost";
+        statusBtn.textContent = t("edit");
+        statusBtn.addEventListener("click", () => {
+          this.closeModal();
+          setTimeout(() => this.openStatusPicker(), 100);
+        });
+        statusRow.appendChild(statusBtn);
+        statusSec.appendChild(statusRow);
+        body.appendChild(statusSec);
 
         const notif = document.createElement("div");
         notif.className = "settings-section";
@@ -3747,6 +4113,26 @@ class NEXORA {
         });
         notifRow.appendChild(notifBtn);
         notif.appendChild(notifRow);
+
+        const enableNotifRow = document.createElement("div");
+        enableNotifRow.className = "settings-row";
+        enableNotifRow.innerHTML = `<div class="settings-row-info">
+          <div class="settings-row-label">Включить уведомления</div>
+          <div class="settings-row-desc">Показывать уведомления о новых сообщениях</div>
+        </div>`;
+        const enableNotifSwitch = document.createElement("div");
+        enableNotifSwitch.className = "switch" + (this.profile.notifications_enabled !== false ? " on" : "");
+        enableNotifSwitch.addEventListener("click", async () => {
+          const next = !enableNotifSwitch.classList.contains("on");
+          enableNotifSwitch.classList.toggle("on", next);
+          try {
+            await this.updateProfile({ notifications_enabled: next });
+            this.profile.notifications_enabled = next;
+            toast(next ? "Уведомления включены" : "Уведомления выключены", "success");
+          } catch (e) { toast(e.message || "Ошибка", "error"); }
+        });
+        enableNotifRow.appendChild(enableNotifSwitch);
+        notif.appendChild(enableNotifRow);
 
         const soundRow = document.createElement("div");
         soundRow.className = "settings-row";
@@ -3775,7 +4161,6 @@ class NEXORA {
         const appearance = document.createElement("div");
         appearance.className = "settings-section";
         appearance.innerHTML = `<h3>🎨 ${t("appearance")}</h3>`;
-
         const themeRow = document.createElement("div");
         themeRow.className = "settings-row";
         themeRow.innerHTML = `<div class="settings-row-info">
@@ -3876,7 +4261,7 @@ class NEXORA {
         about.innerHTML = `<h3>ℹ ${t("aboutApp")}</h3>
           <div style="color:var(--text-0);font-weight:700">NEXORA</div>
           <div style="color:var(--text-2);font-size:13px;margin-top:4px">Connect without limits.</div>
-          <div style="color:var(--text-3);font-size:12px;margin-top:6px">Version 8.5</div>`;
+          <div style="color:var(--text-3);font-size:12px;margin-top:6px">Version 9.0</div>`;
         body.appendChild(about);
 
         const out = document.createElement("button");
@@ -3924,6 +4309,161 @@ class NEXORA {
     });
     r.appendChild(sw);
     return r;
+  }
+
+  /* ============================================================
+     STATUS PICKER
+     ============================================================ */
+  openStatusPicker() {
+    const cur = this.profile.status || "online";
+    this.openModal({
+      title: "Статус",
+      narrow: true,
+      body: (body) => {
+        body.innerHTML = "";
+        Object.entries(STATUS_META).forEach(([key, meta]) => {
+          const row = document.createElement("div");
+          row.className = "settings-row";
+          row.style.cursor = "pointer";
+          if (key === cur) row.style.background = "var(--accent-dim)";
+          row.innerHTML = `
+            <div class="settings-row-info">
+              <div class="settings-row-label">
+                <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${meta.color};margin-right:8px"></span>
+                ${escapeHtml(meta.label)}
+              </div>
+            </div>`;
+          row.addEventListener("click", async () => {
+            try {
+              await this.updateProfile({ status: key });
+              this.profile.status = key;
+              if (key === "invisible") {
+                await supabase.from("profiles").update({ is_online: false }).eq("id", this.user.id);
+                this.profile.is_online = false;
+              } else {
+                await this.setOnline(true);
+              }
+              toast("Статус: " + meta.label, "success");
+              Sounds.success();
+              this.closeModal();
+              this.renderSidebarFooter();
+            } catch (e) { toast(e.message || "Ошибка", "error"); }
+          });
+          body.appendChild(row);
+        });
+      },
+    });
+  }
+
+  /* ============================================================
+     BADGE EMOJI PICKER
+     ============================================================ */
+  openBadgePicker() {
+    this.openModal({
+      title: "Значок рядом с именем",
+      narrow: true,
+      body: (body) => {
+        body.innerHTML = `
+          <p style="color:var(--text-2);font-size:13px;margin-bottom:10px">
+            Выбери эмодзи, который будет рядом с твоим именем.
+          </p>
+          <div id="badge-grid" style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px"></div>
+          <button class="btn btn-ghost btn-block" id="badge-clear" style="margin-top:14px">Убрать значок</button>`;
+        const grid = body.querySelector("#badge-grid");
+        const render = () => {
+          grid.innerHTML = "";
+          BADGE_EMOJIS.forEach(e => {
+            const b = document.createElement("button");
+            b.textContent = e;
+            b.style.cssText = `aspect-ratio:1;font-size:24px;border-radius:12px;background:${this.profile.badge_emoji === e ? "var(--accent-dim)" : "var(--bg-2)"};border:1px solid ${this.profile.badge_emoji === e ? "var(--accent)" : "var(--border)"}`;
+            b.addEventListener("click", async () => {
+              try {
+                await this.updateProfile({ badge_emoji: e });
+                this.profile.badge_emoji = e;
+                toast("Значок обновлён", "success");
+                Sounds.success();
+                this.closeModal();
+                this.renderSidebarFooter();
+              } catch (err) { toast(err.message || "Ошибка", "error"); }
+            });
+            grid.appendChild(b);
+          });
+        };
+        render();
+        body.querySelector("#badge-clear").addEventListener("click", async () => {
+          try {
+            await this.updateProfile({ badge_emoji: null });
+            this.profile.badge_emoji = null;
+            toast("Значок убран", "warning");
+            this.closeModal();
+            this.renderSidebarFooter();
+          } catch (e) { toast(e.message || "Ошибка", "error"); }
+        });
+      },
+    });
+  }
+
+  /* ============================================================
+     SOCIAL LINKS EDITOR
+     ============================================================ */
+  openSocialLinksEditor() {
+    const current = this.profile.social_links || {};
+    this.openModal({
+      title: "Соц-ссылки",
+      wide: true,
+      body: (body) => {
+        body.innerHTML = `
+          <p style="color:var(--text-2);font-size:13px;margin-bottom:14px">
+            Заполни только те поля, которые хочешь показывать публично.
+          </p>
+          <div id="sl-fields"></div>
+          <div id="sl-error" class="form-error"></div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)">
+            <button class="btn btn-ghost" id="sl-cancel">${t("cancel")}</button>
+            <button class="btn btn-primary" id="sl-save">${t("save")}</button>
+          </div>`;
+        const holder = body.querySelector("#sl-fields");
+        Object.entries(SOCIAL_META).forEach(([key, meta]) => {
+          const row = document.createElement("div");
+          row.className = "settings-row";
+          row.innerHTML = `
+            <div class="settings-row-info">
+              <div class="settings-row-label">${meta.icon} ${escapeHtml(meta.label)}</div>
+            </div>`;
+          const inp = document.createElement("input");
+          inp.value = current[key] || "";
+          inp.placeholder = meta.placeholder;
+          inp.style.maxWidth = "280px";
+          row.appendChild(inp);
+          holder.appendChild(row);
+          inp.dataset.key = key;
+        });
+        body.querySelector("#sl-cancel").addEventListener("click", () => this.closeModal());
+        body.querySelector("#sl-save").addEventListener("click", async () => {
+          const errEl = body.querySelector("#sl-error");
+          errEl.classList.remove("show");
+          const out = {};
+          const inputs = holder.querySelectorAll("input[data-key]");
+          for (const inp of inputs) {
+            const v = inp.value.trim();
+            if (!v) continue;
+            if (!/^https:\/\//i.test(v)) {
+              errEl.textContent = "Ссылки должны начинаться с https://";
+              errEl.classList.add("show");
+              return;
+            }
+            out[inp.dataset.key] = v;
+          }
+          try {
+            await this.updateProfile({ social_links: out });
+            this.profile.social_links = out;
+            toast("Ссылки сохранены", "success");
+            Sounds.success();
+            this.closeModal();
+          } catch (e) { errEl.textContent = e.message || "Ошибка"; errEl.classList.add("show"); }
+        });
+      },
+    });
   }
 
   openProfileThemePicker() {
@@ -4064,76 +4604,139 @@ class NEXORA {
   }
 
   /* ============================================================
-     PROFILE (self)
+     PROFILE (self) — полностью переписано
      ============================================================ */
   openProfile() {
     this.openModal({
       title: t("profile"),
-      narrow: true,
+      wide: true,
       body: (body) => {
-        body.innerHTML = `
-          <div class="profile-hero">
-            ${avatarHTML(this.profile, "xl")}
-            <div class="profile-hero-name">${escapeHtml(this.profile.username)}</div>
-            <div class="profile-hero-id" id="profile-id">${escapeHtml(this.profile.nexora_id)}</div>
-          </div>`;
+        const me = this.profile;
+        const status = me.status || "online";
+        const socials = me.social_links || {};
+        const socialKeys = Object.keys(socials);
+        const stats = { chats: this.chats.length, messages: 0 };
+        body.innerHTML = "";
+        const wrap = document.createElement("div");
+        wrap.className = "profile-card";
+
+        let coverHTML = `<div class="profile-cover"></div>`;
+        if (me.cover_url) {
+          coverHTML = `<div class="profile-cover with-image" style="background-image:url('${safeUrl(me.cover_url)}')"></div>`;
+        } else if (me.cover_preset) {
+          const clsMap = {
+            "gradient-1": "cover-gradient-1", "gradient-2": "cover-gradient-2",
+            "gradient-3": "cover-gradient-3", "gradient-4": "cover-gradient-4",
+            "gradient-5": "cover-gradient-5", "particles": "cover-gradient-1 particles",
+            "waves": "waves",
+          };
+          const cls = clsMap[me.cover_preset] || "cover-gradient-1";
+          coverHTML = `<div class="profile-cover preset ${cls}"></div>`;
+        }
+
+        wrap.innerHTML = `
+          ${coverHTML}
+          <div class="profile-avatar-wrap">
+            ${avatarHTML(me, "xl", "profile-avatar-clickable")}
+          </div>
+          <div class="profile-name">
+            ${escapeHtml(me.username)}
+            ${me.badge_emoji ? `<span style="margin-left:8px">${escapeHtml(me.badge_emoji)}</span>` : ""}
+          </div>
+          <div class="profile-nickname">${escapeHtml(me.username)}</div>
+          <div class="profile-id-badge" id="profile-id">${escapeHtml(me.nexora_id)}</div>
+          <div class="profile-status">
+            <span><span class="dot" style="background:${STATUS_META[status]?.color || "#3ddc84"}"></span>
+              ${escapeHtml(STATUS_META[status]?.label || "В сети")}
+            </span>
+          </div>
+          ${me.activity_text ? `<div class="activity-line">${escapeHtml(me.activity_text)}</div>` : ""}
+          ${me.about ? `
+            <div class="settings-section" style="margin-top:16px;background:var(--bg-2)">
+              <h3 style="margin-bottom:8px">${t("about")}</h3>
+              <div style="color:var(--text-1);font-size:13px;line-height:1.5">${escapeHtml(me.about)}</div>
+            </div>
+          ` : ""}`;
+
+        /* Соц-ссылки */
+        if (socialKeys.length) {
+          const soc = document.createElement("div");
+          soc.className = "settings-section";
+          soc.style.marginTop = "16px";
+          soc.innerHTML = `<h3>Ссылки</h3>`;
+          const list = document.createElement("div");
+          list.className = "social-list";
+          socialKeys.forEach(k => {
+            const meta = SOCIAL_META[k];
+            if (!meta) return;
+            const a = document.createElement("a");
+            a.className = "social-item";
+            a.href = safeUrl(socials[k]);
+            a.target = "_blank"; a.rel = "noopener noreferrer nofollow";
+            a.innerHTML = `<span class="social-icon" style="color:${meta.color}">${meta.icon}</span> ${escapeHtml(meta.label)}`;
+            list.appendChild(a);
+          });
+          soc.appendChild(list);
+          wrap.appendChild(soc);
+        }
+
+        body.appendChild(wrap);
         body.querySelector("#profile-id").addEventListener("click", () => {
-          navigator.clipboard.writeText(this.profile.nexora_id);
+          navigator.clipboard.writeText(me.nexora_id);
           toast("ID скопирован", "success");
           Sounds.click();
         });
-        const uploadBtn = document.createElement("button");
-        uploadBtn.className = "btn btn-primary btn-block";
-        uploadBtn.textContent = "📷 " + t("uploadAvatar");
-        uploadBtn.style.marginBottom = "8px";
-        uploadBtn.addEventListener("click", () => $("file-avatar").click());
-        body.appendChild(uploadBtn);
-        const coverBtn = document.createElement("button");
-        coverBtn.className = "btn btn-ghost btn-block";
-        coverBtn.textContent = "🖼️ " + t("uploadCover");
-        coverBtn.style.marginBottom = "14px";
-        coverBtn.addEventListener("click", () => $("file-cover").click());
-        body.appendChild(coverBtn);
-        const unameSec = document.createElement("div");
-        unameSec.className = "settings-section";
-        unameSec.innerHTML = `<h3>${t("username")}</h3>`;
-        const unameInput = document.createElement("input");
-        unameInput.value = this.profile.username;
-        unameInput.maxLength = 24;
-        const unameSave = document.createElement("button");
-        unameSave.className = "btn btn-primary";
-        unameSave.textContent = t("save");
-        unameSave.style.marginTop = "10px";
-        unameSave.addEventListener("click", async () => {
-          const v = unameInput.value.trim();
-          if (!/^[a-zA-Z0-9_]{3,24}$/.test(v)) return toast("3–24 символа, буквы/цифры/_", "warning");
-          try {
-            await this.updateProfile({ username: v });
-            this.renderSidebarFooter();
-            toast("Username обновлён", "success");
+
+        /* Действия */
+        const actions = document.createElement("div");
+        actions.className = "profile-actions";
+        const mkBtn = (label, handler, ghost = false, full = false) => {
+          const b = document.createElement("button");
+          b.className = "btn " + (ghost ? "btn-ghost" : "btn-primary") + (full ? " btn-full" : "");
+          b.textContent = label;
+          b.addEventListener("click", handler);
+          actions.appendChild(b);
+        };
+        mkBtn("✎ Редактировать профиль", () => { this.closeModal(); this.openProfile(); }, false, true);
+        mkBtn("📷 Сменить аватар", () => $("file-avatar").click(), true);
+        mkBtn("🖼️ Сменить обложку", () => { this.closeModal(); setTimeout(() => this.openCoverPicker(), 100); }, true);
+        mkBtn("🎨 Значок", () => { this.closeModal(); setTimeout(() => this.openBadgePicker(), 100); }, true);
+        mkBtn("🟢 Статус", () => { this.closeModal(); setTimeout(() => this.openStatusPicker(), 100); }, true);
+        mkBtn("🔗 Соц-ссылки", () => { this.closeModal(); setTimeout(() => this.openSocialLinksEditor(), 100); }, true);
+        mkBtn("✎ О себе", () => { this.closeModal(); setTimeout(() => this.openAboutEditor(), 100); }, true);
+        mkBtn("📤 Поделиться ID", () => {
+          const link = `${location.origin}${location.pathname}?u=${me.nexora_id}`;
+          navigator.clipboard.writeText(link).then(() => {
+            toast("Ссылка скопирована", "success");
             Sounds.success();
-          } catch (e) { toast(e.message || "Ошибка", "error"); }
-        });
-        unameSec.appendChild(unameInput); unameSec.appendChild(unameSave);
-        body.appendChild(unameSec);
-        const aboutSec = document.createElement("div");
-        aboutSec.className = "settings-section";
-        aboutSec.innerHTML = `<h3>${t("about")}</h3>`;
-        const ta = document.createElement("textarea");
-        ta.rows = 3; ta.maxLength = 300;
-        ta.value = this.profile.about || "";
-        const save = document.createElement("button");
-        save.className = "btn btn-primary"; save.textContent = t("save");
-        save.style.marginTop = "10px";
-        save.addEventListener("click", async () => {
+          });
+        }, true);
+        wrap.appendChild(actions);
+      },
+    });
+  }
+  openAboutEditor() {
+    this.openModal({
+      title: "О себе",
+      narrow: true,
+      body: (body) => {
+        body.innerHTML = `
+          <textarea id="about-input" rows="4" maxlength="300" placeholder="Пара слов о себе…">${escapeHtml(this.profile.about || "")}</textarea>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)">
+            <button class="btn btn-ghost" id="about-cancel">${t("cancel")}</button>
+            <button class="btn btn-primary" id="about-save">${t("save")}</button>
+          </div>`;
+        body.querySelector("#about-cancel").addEventListener("click", () => this.closeModal());
+        body.querySelector("#about-save").addEventListener("click", async () => {
+          const v = body.querySelector("#about-input").value.trim().slice(0, 300);
           try {
-            await this.updateProfile({ about: ta.value.slice(0, 300) });
+            await this.updateProfile({ about: v });
+            this.profile.about = v;
             toast("Сохранено", "success");
             Sounds.success();
-          } catch (e) { toast("Ошибка", "error"); }
+            this.closeModal();
+          } catch (e) { toast(e.message || "Ошибка", "error"); }
         });
-        aboutSec.appendChild(ta); aboutSec.appendChild(save);
-        body.appendChild(aboutSec);
       },
     });
   }
@@ -4156,13 +4759,20 @@ class NEXORA {
         if (!card) { body.innerHTML = `<div class="empty-state">Профиль не найден</div>`; return; }
         if (!card.avatar_url && peer?.avatar_url) card.avatar_url = peer.avatar_url;
         if (!card.about && peer?.about) card.about = peer.about;
+        if (!card.status && peer?.status) card.status = peer.status;
+        if (!card.badge_emoji && peer?.badge_emoji) card.badge_emoji = peer.badge_emoji;
+        if (!card.social_links && peer?.social_links) card.social_links = peer.social_links;
         const isSelf = card.id === this.user.id;
         const isBot = !!card.is_bot;
         const displayName = card.nickname || card.username;
-        const online = !isBot && card.is_online && card.show_online !== false;
+        const status = card.status || "online";
+        const online = !isBot && card.is_online && card.show_online !== false && status !== "invisible";
         const lastSeen = card.last_seen ? formatTime(card.last_seen) : "";
         const created = card.created_at ? new Date(card.created_at) : null;
         const createdStr = created ? created.toLocaleDateString(_locale(), { day: "numeric", month: "long", year: "numeric" }) : "";
+        const socials = card.social_links || {};
+        const socialKeys = Object.keys(socials);
+
         body.innerHTML = "";
         const cardEl = document.createElement("div");
         cardEl.className = "profile-card";
@@ -4186,12 +4796,12 @@ class NEXORA {
           <div class="profile-avatar-wrap">
             ${avatarHTML(card, "xl", "profile-avatar-clickable")}
           </div>
-          <div class="profile-name">${escapeHtml(displayName)}${isBot ? ' <span class="bot-badge">[BOT]</span>' : ""}</div>
+          <div class="profile-name">${escapeHtml(displayName)}${card.badge_emoji ? `<span style="margin-left:8px">${escapeHtml(card.badge_emoji)}</span>` : ""}${isBot ? ' <span class="bot-badge">[BOT]</span>' : ""}</div>
           ${card.nickname ? `<div class="profile-nickname">настоящий ник: @${escapeHtml(card.username)}</div>` : ""}
           <div class="profile-id-badge" id="card-id-copy">${escapeHtml(card.nexora_id)}</div>
           <div class="profile-status">
-            <span><span class="dot ${online ? "online" : ""}"></span>
-              ${online ? t("online") : (lastSeen ? t("wasOnline") + " " + lastSeen : t("offline"))}
+            <span><span class="dot" style="background:${STATUS_META[status]?.color || "#3ddc84"}"></span>
+              ${online ? (STATUS_META[status]?.label || t("online")) : (lastSeen ? t("wasOnline") + " " + lastSeen : t("offline"))}
             </span>
           </div>
           ${card.activity_text ? `<div class="activity-line">${escapeHtml(card.activity_text)}</div>` : ""}
@@ -4202,6 +4812,28 @@ class NEXORA {
             </div>
           ` : ""}`;
         body.appendChild(cardEl);
+
+        if (socialKeys.length) {
+          const soc = document.createElement("div");
+          soc.className = "settings-section";
+          soc.style.marginTop = "12px";
+          soc.innerHTML = `<h3>Ссылки</h3>`;
+          const list = document.createElement("div");
+          list.className = "social-list";
+          socialKeys.forEach(k => {
+            const meta = SOCIAL_META[k];
+            if (!meta) return;
+            const a = document.createElement("a");
+            a.className = "social-item";
+            a.href = safeUrl(socials[k]);
+            a.target = "_blank"; a.rel = "noopener noreferrer nofollow";
+            a.innerHTML = `<span class="social-icon" style="color:${meta.color}">${meta.icon}</span> ${escapeHtml(meta.label)}`;
+            list.appendChild(a);
+          });
+          soc.appendChild(list);
+          cardEl.appendChild(soc);
+        }
+
         cardEl.querySelector("#card-id-copy").addEventListener("click", () => {
           navigator.clipboard.writeText(card.nexora_id);
           toast("ID скопирован", "success");
@@ -4209,31 +4841,7 @@ class NEXORA {
         });
         const av = cardEl.querySelector(".profile-avatar-clickable");
         if (av && card.avatar_url) av.addEventListener("click", () => this.openLightbox(card.avatar_url, "image"));
-        const statsEl = document.createElement("div");
-        statsEl.className = "profile-stats";
-        statsEl.innerHTML = `
-          <div class="profile-stat"><div class="profile-stat-value" id="stat-chats">…</div><div class="profile-stat-label">Чатов</div></div>
-          <div class="profile-stat"><div class="profile-stat-value" id="stat-msgs">…</div><div class="profile-stat-label">Сообщений</div></div>`;
-        cardEl.appendChild(statsEl);
-        (async () => {
-          try {
-            const { data } = await supabase.rpc("get_profile_details", { p_user_id: card.id });
-            const row = Array.isArray(data) ? data[0] : data;
-            if (row) {
-              cardEl.querySelector("#stat-chats").textContent = row.chat_count ?? 0;
-              cardEl.querySelector("#stat-msgs").textContent = row.message_count ?? 0;
-            }
-          } catch (_) {
-            cardEl.querySelector("#stat-chats").textContent = "—";
-            cardEl.querySelector("#stat-msgs").textContent = "—";
-          }
-        })();
-        if (createdStr) {
-          const reg = document.createElement("div");
-          reg.style.cssText = "text-align:center;font-size:11px;color:var(--text-3);margin-top:12px";
-          reg.textContent = "В NEXORA с " + createdStr;
-          cardEl.appendChild(reg);
-        }
+
         const actions = document.createElement("div");
         actions.className = "profile-actions";
         if (isSelf) {
@@ -4242,22 +4850,6 @@ class NEXORA {
           edit.textContent = "✎ " + t("editProfile");
           edit.addEventListener("click", () => { this.closeModal(); this.openProfile(); });
           actions.appendChild(edit);
-          const share = document.createElement("button");
-          share.className = "btn btn-ghost";
-          share.textContent = "🔗 " + t("shareId");
-          share.addEventListener("click", () => {
-            const link = `${location.origin}${location.pathname}?u=${card.nexora_id}`;
-            navigator.clipboard.writeText(link).then(() => {
-              toast("Ссылка скопирована", "success");
-              Sounds.success();
-            });
-          });
-          actions.appendChild(share);
-          const avBtn = document.createElement("button");
-          avBtn.className = "btn btn-ghost";
-          avBtn.textContent = "📷 " + t("changeAvatar");
-          avBtn.addEventListener("click", () => $("file-avatar").click());
-          actions.appendChild(avBtn);
         } else {
           const msg = document.createElement("button");
           msg.className = "btn btn-primary btn-full";
@@ -5015,7 +5607,9 @@ class NEXORA {
       });
       $("btn-send").addEventListener("click", () => this.sendCurrent());
       $("btn-attach").addEventListener("click", () => { Sounds.click(); this.pickAttachment(); });
-      $("btn-emoji").addEventListener("click", () => { Sounds.click(); this.openPicker(); });
+      $("btn-emoji").addEventListener("click", () => { Sounds.click(); this.openPicker("emoji"); });
+      const stickerBtn = $("btn-sticker");
+      if (stickerBtn) stickerBtn.addEventListener("click", () => { Sounds.click(); this.openPicker("stickers"); });
       const pollBtn = $("btn-poll");
       if (pollBtn) pollBtn.addEventListener("click", () => { Sounds.click(); this.openPollCreator(); });
       const voiceBtn = $("btn-voice");
