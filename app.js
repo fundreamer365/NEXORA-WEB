@@ -1,38 +1,5 @@
 /* ============================================================
    NEXORA v10.0 — единый app.js
-   Полная интеграция с index.html и style.css.
-
-   Включено:
-   - Базовая авторизация / регистрация / 2FA / restore session
-   - Профили, NEXORA ID, статусы, badge, соц-ссылки
-   - Личные чаты, группы, каналы, контакты
-   - Сообщения, реакции, редактирование, удаление (для себя / для всех)
-   - Realtime везде (messages, reactions, polls, chat_members, profiles)
-   - Медиа: изображения, видео, файлы, голосовые, audio player, video player
-   - Опросы (single / multiple / quiz / anonymous)
-   - Комментарии под постами каналов
-   - Picker эмодзи / стикеров + reaction picker
-   - Communities: rail, категории, текстовые каналы, роли, права,
-     участники, приглашения, realtime
-   - Кастомизации v10:
-       * animated profile covers (presets + particles + waves)
-       * custom name color / gradient (whitelist)
-       * avatar pulse toggle
-       * name title / tag
-       * custom message font
-       * custom own-message color
-       * text effects (glow / rainbow / shimmer)
-       * custom notification sound (upload + presets)
-       * chat wallpapers (URL + upload)
-       * message background patterns
-       * bubble styles (rounded / square / minimal / pill)
-       * extra themes (Nord, Dracula, Solarized и др.)
-       * UI sounds toggle
-       * compact / expanded chat list
-       * profile music
-       * animated emoji status (badge)
-       * voice wallpaper / animated cover presets
-       * SVG animated badge catalog
    ============================================================ */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
