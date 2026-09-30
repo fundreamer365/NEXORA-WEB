@@ -98,7 +98,14 @@
 
     <aside class="sidebar" id="sidebar">
       <div class="sidebar-header">
-        <div class="brand">NEXORA</div>
+        <div class="brand">
+          <svg class="brand-logo-svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:22px;height:22px;vertical-align:-3px;margin-right:4px">
+            <polygon points="12 2 22 8.5 22 15.5 12 22 2 15.5 2 8.5 12 2"/>
+            <polyline points="12 22 12 12 22 8.5"/>
+            <polyline points="2 8.5 12 12 22 8.5"/>
+          </svg>
+          NEXORA
+        </div>
         <div class="header-actions">
           <button id="btn-communities" class="icon-btn" title="Сообщества" aria-label="Сообщества">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
@@ -180,7 +187,10 @@
       <div class="sidebar-footer" id="sidebar-footer">
         <div class="avatar avatar-md" id="me-avatar">?</div>
         <div class="sidebar-footer-body">
-          <div class="sidebar-footer-name" id="me-name">—</div>
+          <div class="sidebar-footer-name">
+            <span id="me-name">—</span>
+            <span id="me-badge-container"></span>
+          </div>
           <div class="sidebar-footer-id" id="me-id">—</div>
         </div>
         <button id="btn-settings" class="icon-btn" title="Настройки" aria-label="Настройки">
@@ -208,9 +218,18 @@
           </button>
           <div class="avatar avatar-md" id="chat-peer-avatar">?</div>
           <div class="chat-header-body" id="chat-header-body">
-            <div class="chat-header-name" id="chat-peer-name">—</div>
+            <div class="chat-header-name">
+              <span id="chat-peer-name">—</span>
+              <span id="chat-peer-badge-container"></span>
+            </div>
             <div class="chat-header-sub" id="chat-peer-sub">—</div>
           </div>
+          <button id="btn-call-audio" class="icon-btn" title="Аудиозвонок" aria-label="Аудиозвонок">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+          </button>
+          <button id="btn-call-video" class="icon-btn" title="Видеозвонок" aria-label="Видеозвонок">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+          </button>
           <button id="btn-chat-info" class="icon-btn" title="Информация" aria-label="Информация">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>
           </button>
@@ -265,12 +284,37 @@
 </div>
 
 <!-- ============================================================
+     CALL OVERLAY (входящий / активный звонок)
+     ============================================================ -->
+<div id="call-overlay" class="call-overlay hidden">
+  <div class="call-bg"></div>
+  <div class="call-content" id="call-content">
+    <!-- Заполняется из app.js -->
+  </div>
+  <div class="call-controls" id="call-controls">
+    <button class="call-btn" id="call-mute" title="Микрофон">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+    </button>
+    <button class="call-btn" id="call-cam" title="Камера">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
+    </button>
+    <button class="call-btn danger" id="call-hangup" title="Завершить">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91"/><line x1="23" y1="1" x2="1" y2="23"/></svg>
+    </button>
+    <button class="call-btn" id="call-accept" title="Принять" style="display:none">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.96.36 1.9.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.91.34 1.85.57 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+    </button>
+    <button class="call-btn" id="call-decline" title="Отклонить" style="display:none">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+    </button>
+  </div>
+</div>
+
+<!-- ============================================================
      COMMUNITY SCREEN (этап 4)
      ============================================================ -->
 <div id="community-screen" class="community-screen hidden">
-  <div class="community-rail" id="community-rail">
-    <!-- Кнопки-иконки сообществ + кнопка "+" вставятся из app.js -->
-  </div>
+  <div class="community-rail" id="community-rail"></div>
 
   <aside class="community-sidebar" id="community-sidebar">
     <div class="community-sidebar-header" id="community-sidebar-header">
@@ -279,9 +323,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
       </button>
     </div>
-    <div class="community-sidebar-body" id="community-sidebar-body">
-      <!-- categories + channels вставятся из app.js -->
-    </div>
+    <div class="community-sidebar-body" id="community-sidebar-body"></div>
     <div class="community-sidebar-footer" id="community-sidebar-footer">
       <div class="avatar avatar-sm" id="community-me-avatar">?</div>
       <div class="community-me-body">
@@ -313,16 +355,34 @@
         </button>
       </header>
 
-      <div class="community-messages" id="community-messages"></div>
+      <!-- Voice channel view -->
+      <div class="community-voice hidden" id="community-voice-view">
+        <div class="voice-stage">
+          <div class="voice-stage-participants" id="voice-stage-participants"></div>
+          <div class="voice-stage-controls">
+            <button class="call-btn" id="voice-community-mute" title="Микрофон">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+            </button>
+            <button class="call-btn danger" id="voice-community-leave" title="Выйти">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.68 13.31a16 16 0 0 0 3.41 2.6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7 2 2 0 0 1 1.72 2v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.42 19.42 0 0 1-3.33-2.67m-2.67-3.34a19.79 19.79 0 0 1-3.07-8.63A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91"/><line x1="23" y1="1" x2="1" y2="23"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
 
-      <div class="composer community-composer">
-        <button id="btn-community-attach" class="icon-btn" title="Прикрепить" aria-label="Прикрепить">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
-        </button>
-        <textarea id="community-composer" rows="1" maxlength="4000" placeholder="Написать в #channel…"></textarea>
-        <button id="btn-community-send" class="btn btn-primary send-btn" aria-label="Отправить">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-        </button>
+      <!-- Text channel view -->
+      <div class="community-text" id="community-text-view">
+        <div class="community-messages" id="community-messages"></div>
+
+        <div class="composer community-composer">
+          <button id="btn-community-attach" class="icon-btn" title="Прикрепить" aria-label="Прикрепить">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+          </button>
+          <textarea id="community-composer" rows="1" maxlength="4000" placeholder="Написать в #channel…"></textarea>
+          <button id="btn-community-send" class="btn btn-primary send-btn" aria-label="Отправить">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -334,7 +394,7 @@
 </div>
 
 <!-- ============================================================
-     COMMUNITIES HOME (список + создание)
+     COMMUNITIES HOME
      ============================================================ -->
 <div id="communities-home" class="communities-home hidden">
   <div class="communities-home-inner">
@@ -352,11 +412,133 @@
   </div>
 </div>
 
+<!-- ============================================================
+     ANIMATED SVG CATALOG (для кастомного значка)
+     ============================================================ -->
+<div id="svg-catalog-modal" class="svg-catalog-modal hidden">
+  <div class="svg-catalog-inner">
+    <header class="svg-catalog-header">
+      <div>Анимированные значки</div>
+      <button class="icon-btn" id="svg-catalog-close" aria-label="Закрыть">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </header>
+    <div class="svg-catalog-body" id="svg-catalog-body"></div>
+  </div>
+</div>
+
+<!-- HIDDEN SVG SPRITE (используется для вставки анимированных SVG) -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <!-- Пульс сердца -->
+    <symbol id="anim-heart" viewBox="0 0 24 24">
+      <path d="M12 21s-7-4.5-9.5-9.5C.5 7 3.5 3 7.5 3c2 0 3.5 1 4.5 2.5C13 4 14.5 3 16.5 3c4 0 7 4 5 8.5C19 16.5 12 21 12 21z" fill="#ff5a6e">
+        <animate attributeName="opacity" values="1;0.5;1" dur="1s" repeatCount="indefinite"/>
+      </path>
+    </symbol>
+    <!-- Вращающаяся звезда -->
+    <symbol id="anim-star" viewBox="0 0 24 24">
+      <polygon points="12 2 15 9 22 9 16 14 18 22 12 17 6 22 8 14 2 9 9 9" fill="#ffb547">
+        <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="3s" repeatCount="indefinite"/>
+      </polygon>
+    </symbol>
+    <!-- Огонь -->
+    <symbol id="anim-fire" viewBox="0 0 24 24">
+      <path d="M12 2s4 5 4 9a4 4 0 0 1-8 0c0-2 1-4 4-9z" fill="#ff6a3d">
+        <animate attributeName="opacity" values="1;0.6;1" dur="0.6s" repeatCount="indefinite"/>
+      </path>
+    </symbol>
+    <!-- Кристалл с мерцанием -->
+    <symbol id="anim-crystal" viewBox="0 0 24 24">
+      <polygon points="12 2 20 10 12 22 4 10" fill="#5ce1e6">
+        <animate attributeName="fill-opacity" values="1;0.5;1" dur="1.5s" repeatCount="indefinite"/>
+      </polygon>
+    </symbol>
+    <!-- Молния -->
+    <symbol id="anim-bolt" viewBox="0 0 24 24">
+      <polygon points="13 2 3 14 11 14 10 22 21 10 13 10" fill="#ffb547">
+        <animate attributeName="opacity" values="0.7;1;0.7" dur="0.4s" repeatCount="indefinite"/>
+      </polygon>
+    </symbol>
+    <!-- Кольцо с вращением -->
+    <symbol id="anim-ring" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="9" fill="none" stroke="#7c5cff" stroke-width="2" stroke-dasharray="14 4">
+        <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="2s" repeatCount="indefinite"/>
+      </circle>
+    </symbol>
+    <!-- Призрак -->
+    <symbol id="anim-ghost" viewBox="0 0 24 24">
+      <path d="M12 2c-4 0-6 3-6 7v13l3-3 3 3 3-3 3 3V9c0-4-2-7-6-7z" fill="#e6e6ff">
+        <animate attributeName="opacity" values="1;0.5;1" dur="2s" repeatCount="indefinite"/>
+      </path>
+    </symbol>
+    <!-- Космос (планета) -->
+    <symbol id="anim-planet" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="5" fill="#9375ff"/>
+      <ellipse cx="12" cy="12" rx="10" ry="3" fill="none" stroke="#5ce1e6" stroke-width="1">
+        <animateTransform attributeName="transform" type="rotate" from="0 12 12" to="360 12 12" dur="6s" repeatCount="indefinite"/>
+      </ellipse>
+    </symbol>
+    <!-- Пульсирующий синий круг -->
+    <symbol id="anim-pulse" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="4" fill="#4da6ff">
+        <animate attributeName="r" values="4;9;4" dur="1.5s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="1;0.2;1" dur="1.5s" repeatCount="indefinite"/>
+      </circle>
+    </symbol>
+    <!-- Вращающийся череп -->
+    <symbol id="anim-skull" viewBox="0 0 24 24">
+      <circle cx="12" cy="11" r="7" fill="#e6e6e6">
+        <animateTransform attributeName="transform" type="rotate" from="-10 12 11" to="10 12 11" dur="1.2s" repeatCount="indefinite" type="rotate" values="-10;10;-10"/>
+      </circle>
+    </symbol>
+    <!-- Радужная планета -->
+    <symbol id="anim-rainbow" viewBox="0 0 24 24">
+      <circle cx="12" cy="12" r="8" fill="none" stroke-width="2">
+        <animate attributeName="stroke" values="#ff5a6e;#ffb547;#3ddc84;#4da6ff;#7c5cff;#ff5a6e" dur="4s" repeatCount="indefinite"/>
+      </circle>
+    </symbol>
+    <!-- Тлеющие искры -->
+    <symbol id="anim-spark" viewBox="0 0 24 24">
+      <circle cx="8" cy="8" r="1.5" fill="#ffb547">
+        <animate attributeName="opacity" values="1;0.1;1" dur="1s" repeatCount="indefinite"/>
+      </circle>
+      <circle cx="16" cy="12" r="1.2" fill="#ff6a3d">
+        <animate attributeName="opacity" values="0.1;1;0.1" dur="1.3s" repeatCount="indefinite"/>
+      </circle>
+      <circle cx="12" cy="18" r="1.5" fill="#ff5a6e">
+        <animate attributeName="opacity" values="1;0.2;1" dur="0.9s" repeatCount="indefinite"/>
+      </circle>
+    </symbol>
+    <!-- Кот (анимированный хвост) -->
+    <symbol id="anim-cat" viewBox="0 0 24 24">
+      <ellipse cx="12" cy="16" rx="6" ry="4" fill="#9aa0ff"/>
+      <circle cx="12" cy="9" r="4" fill="#9aa0ff"/>
+      <polygon points="9 6 8 3 10 5" fill="#9aa0ff"/>
+      <polygon points="15 6 16 3 14 5" fill="#9aa0ff"/>
+      <path d="M18 16 q4 -3 2 -6" stroke="#9aa0ff" stroke-width="1.5" fill="none">
+        <animate attributeName="d" values="M18 16 q4 -3 2 -6;M18 16 q5 -2 2 -7;M18 16 q4 -3 2 -6" dur="2s" repeatCount="indefinite"/>
+      </path>
+    </symbol>
+    <!-- Единорог -->
+    <symbol id="anim-unicorn" viewBox="0 0 24 24">
+      <path d="M12 2 L13 6 L11 6 Z" fill="#ff6ad5">
+        <animate attributeName="fill" values="#ff6ad5;#5ce1e6;#ffb547;#ff6ad5" dur="3s" repeatCount="indefinite"/>
+      </path>
+      <circle cx="12" cy="13" r="7" fill="#ffd6f0"/>
+    </symbol>
+  </defs>
+</svg>
+
 <input type="file" id="file-avatar" accept="image/png,image/jpeg,image/webp" style="display:none">
 <input type="file" id="file-cover" accept="image/png,image/jpeg,image/webp" style="display:none">
 <input type="file" id="file-attach" accept="*/*" style="display:none">
 <input type="file" id="file-sticker" accept="image/*" style="display:none">
 <input type="file" id="file-community-attach" accept="*/*" style="display:none">
+<input type="file" id="file-badge" accept="image/png,image/gif,image/webp,image/jpeg" style="display:none">
+<input type="file" id="file-wallpaper-profile" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none">
+<input type="file" id="file-wallpaper-chat" accept="image/png,image/jpeg,image/webp,image/gif" style="display:none">
+<input type="file" id="file-notif-sound" accept="audio/*" style="display:none">
 
 <div id="toast-container"></div>
 
