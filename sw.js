@@ -1,35 +1,46 @@
 /* ============================================================
-   NEXORA Service Worker
-   - Навигация и код (HTML/JS/CSS) — network-first.
-   - Статика (иконки, manifest, шрифты) — cache-first.
-   - Supabase API — не перехватываем.
-   - Push отключён (нет VAPID).
+   NEXORA Service Worker v4 — модульная структура
    ============================================================ */
 
-const CACHE = "nexora-v3";
+const CACHE = "nexora-v4";
 const CORE = [
   "./",
   "./index.html",
-  "./app.js",
   "./style.css",
   "./i18n.js",
   "./themes.js",
   "./manifest.json",
+  "./js/app.js",
+  "./js/supabase.js",
+  "./js/util.js",
+  "./js/sound.js",
+  "./js/media.js",
+  "./js/auth.js",
+  "./js/profile.js",
+  "./js/chat.js",
+  "./js/realtime.js",
+  "./js/communities.js",
+  "./js/settings.js",
+  "./js/economy.js",
+  "./js/shop.js",
 ];
 
 const CACHE_FIRST_EXT = /\.(png|jpg|jpeg|webp|gif|svg|ico|woff2?|ttf|otf|eot)$/i;
 
 self.addEventListener("install", (e) => {
   e.waitUntil(
-    caches.open(CACHE).then((c) => c.addAll(CORE)).then(() => self.skipWaiting())
+    caches.open(CACHE)
+      .then((c) => c.addAll(CORE))
+      .then(() => self.skipWaiting())
   );
 });
 
 self.addEventListener("activate", (e) => {
   e.waitUntil(
-    caches
-      .keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+    caches.keys()
+      .then((keys) => Promise.all(
+        keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))
+      ))
       .then(() => self.clients.claim())
   );
 });
@@ -37,9 +48,7 @@ self.addEventListener("activate", (e) => {
 self.addEventListener("fetch", (e) => {
   const req = e.request;
   if (req.method !== "GET") return;
-
   const url = new URL(req.url);
-
   if (url.hostname.endsWith("supabase.co")) return;
   if (url.origin !== self.location.origin) return;
 
@@ -102,18 +111,13 @@ self.addEventListener("fetch", (e) => {
   );
 });
 
-/* --------- Клик по локальному уведомлению (из app.js) --------- */
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
   const target = (e.notification.data && e.notification.data.url) || "./";
   e.waitUntil(
     clients.matchAll({ type: "window", includeUncontrolled: true }).then((list) => {
       for (const c of list) {
-        if ("focus" in c) {
-          c.focus();
-          c.navigate(target);
-          return;
-        }
+        if ("focus" in c) { c.focus(); c.navigate(target); return; }
       }
       if (clients.openWindow) return clients.openWindow(target);
     })
