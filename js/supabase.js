@@ -1,7 +1,7 @@
 /* ============================================================
    NEXORA — js/supabase.js
-   Единственный Supabase-клиент + все константы проекта.
-   НЕ создавать createClient в других модулях!
+   Единственный Supabase-клиент + все константы.
+   Не создавать createClient в других модулях!
    ============================================================ */
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2.45.4";
@@ -50,6 +50,6 @@ export const RECENT_REACTIONS_KEY = "nexora-recent-reactions";
 export const HIDDEN_MSGS_KEY = "nexora-hidden-msgs";
 export const UI_PREFS_KEY = "nexora-ui-prefs";
 
-/* ---------- LiveKit (для голосовых комнат, Этап 4) ---------- */
+/* ---------- LiveKit ---------- */
 export const LIVEKIT_URL = "wss://nexora-ooy939al.livekit.cloud";
-// API key/secret НЕ хранить здесь — только в Supabase Edge Function Secrets.
+// API key/secret — ТОЛЬКО в Supabase Edge Function Secrets. В клиент их не кладём!
