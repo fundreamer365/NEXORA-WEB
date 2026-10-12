@@ -1,10 +1,10 @@
 /* ============================================================
    NEXORA — js/util.js
    Утилиты: DOM, escape, format, markdown, toast, localStorage.
-   НЕ импортирует ничего из проекта (нижний слой).
+   Импортирует только ./i18n.js (лежит в корне, значит ../i18n.js)
    ============================================================ */
 
-import { currentLocale } from "./i18n-locale.js"; // см. ниже
+import { currentLocale } from "../i18n.js";
 
 /* ---------- DOM ---------- */
 export const $ = (id) => document.getElementById(id);
@@ -162,7 +162,7 @@ export function pushRecent(key, value, max = 24) {
   lsSet(key, list.slice(0, max));
 }
 
-/* ---------- Статусы пользователя ---------- */
+/* ---------- Статусы ---------- */
 export const STATUS_META = {
   online:    { label: "В сети",        color: "#3ddc84", symbol: "" },
   dnd:       { label: "Не беспокоить", color: "#ff5a6e", symbol: "🌙" },
