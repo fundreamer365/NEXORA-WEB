@@ -775,4 +775,471 @@ export class SettingsService {
         .select("id, title, description, avatar_url, username, is_public")
         .eq("type", "channel").eq("is_public", true)
         .not("username", "is", null)
-        .order("updated
+        .order("updated_at", { ascending: false })
+        .limit(100);
+      channels = data || [];
+    } catch (_) {}
+    this.app.openModal({
+      title: "Каталог каналов",
+      wide: true,
+      body: (body) => {
+        if (!channels.length) {
+          body.innerHTML = `<div class="empty-state">Пока нет публичных каналов.</div>`;
+          return;
+        }
+        body.innerHTML = "";
+        channels.forEach((c) => {
+          const card = document.createElement("div");
+          card.className = "catalog-card";
+          card.innerHTML = `<div class="catalog-avatar">#</div><div class="catalog-body"><div class="catalog-title">${escapeHtml(c.title || "")} <span class="channel-badge public">public</span></div><div class="catalog-meta">@${escapeHtml(c.username)} · ${escapeHtml((c.description || "").slice(0, 60))}</div></div>`;
+          card.addEventListener("click", async () => {
+            this.app.closeModal();
+            await this.app.searchChannel(c.username);
+          });
+          body.appendChild(card);
+        });
+      },
+    });
+  }
+
+  async openEmojiPacksManager() {
+    let packs = [];
+    try {
+      const { data } = await supabase.from("emoji_packs")
+        .select("id, name, is_public, created_at")
+        .eq("owner_id", this.app.user.id)
+        .order("created_at", { ascending: false });
+      packs = data || [];
+    } catch (_) {}
+    this.app.openModal({
+      title: "Эмодзи-паки",
+      wide: true,
+      body: (body) => {
+        body.innerHTML = `
+          <p style="color:var(--text-2);font-size:13px;margin-bottom:12px">Создавай свои эмодзи. В сообщениях работают как :shortcode:</p>
+          <button class="btn btn-primary btn-block" id="ep-new" style="margin-bottom:14px">＋ Создать пак</button>
+          <div id="ep-list"></div>`;
+        const list = body.querySelector("#ep-list");
+        if (!packs.length) {
+          list.innerHTML = `<div class="empty-state">Пока нет паков.</div>`;
+        } else {
+          packs.forEach((p) => {
+            const row = document.createElement("div");
+            row.className = "settings-row";
+            row.innerHTML = `<div class="settings-row-info"><div class="settings-row-label">${escapeHtml(p.name)}</div><div class="settings-row-desc">${p.is_public ? "публичный" : "приватный"}</div></div>`;
+            const openBtn = document.createElement("button");
+            openBtn.className = "btn btn-ghost";
+            openBtn.textContent = "Открыть";
+            openBtn.addEventListener("click", () => {
+              this.app.closeModal();
+              setTimeout(() => this.openPackEditor(p), 100);
+            });
+            row.appendChild(openBtn);
+            list.appendChild(row);
+          });
+        }
+        body.querySelector("#ep-new").addEventListener("click", () => {
+          this.app.closeModal();
+          setTimeout(() => this.openCreatePackDialog(), 100);
+        });
+      },
+    });
+  }
+
+  openCreatePackDialog() {
+    this.app.openModal({
+      title: "Создать пак",
+      narrow: true,
+      body: (body) => {
+        body.innerHTML = `
+          <div class="form-group"><label>Название пака</label><input id="ep-name" maxlength="40" placeholder="Мои коты"></div>
+          <label style="display:flex;gap:10px;align-items:center;cursor:pointer;padding:6px 0"><input type="checkbox" id="ep-public" style="width:auto" checked><span>Публичный пак</span></label>
+          <div id="ep-error" class="form-error"></div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)">
+            <button class="btn btn-ghost" id="ep-cancel">Отмена</button>
+            <button class="btn btn-primary" id="ep-create">Создать</button>
+          </div>`;
+        body.querySelector("#ep-cancel").addEventListener("click", () => this.app.closeModal());
+        body.querySelector("#ep-create").addEventListener("click", async () => {
+          const name = body.querySelector("#ep-name").value.trim();
+          const isPublic = body.querySelector("#ep-public").checked;
+          const errEl = body.querySelector("#ep-error");
+          errEl.classList.remove("show");
+          if (!name) {
+            errEl.textContent = "Введи название";
+            errEl.classList.add("show");
+            return;
+          }
+          try {
+            const { data, error } = await supabase.from("emoji_packs")
+              .insert({ owner_id: this.app.user.id, name, is_public: isPublic })
+              .select().single();
+            if (error) throw error;
+            toast("Пак создан", "success");
+            this.app.sounds?.success();
+            this.app.closeModal();
+            setTimeout(() => this.openPackEditor(data), 100);
+          } catch (e) {
+            errEl.textContent = e.message || "Ошибка";
+            errEl.classList.add("show");
+          }
+        });
+      },
+    });
+  }
+
+  async openPackEditor(pack) {
+    let emojis = [];
+    try {
+      const { data } = await supabase.from("custom_emojis")
+        .select("id, shortcode, url")
+        .eq("pack_id", pack.id)
+        .order("created_at", { ascending: true });
+      emojis = data || [];
+    } catch (_) {}
+    this.app.openModal({
+      title: `Пак: ${pack.name}`,
+      wide: true,
+      body: (body) => {
+        body.innerHTML = `
+          <div style="display:flex;gap:8px;margin-bottom:14px">
+            <button class="btn btn-primary" id="ce-add">＋ Загрузить эмодзи</button>
+          </div>
+          <div id="ce-list" style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px"></div>`;
+        const list = body.querySelector("#ce-list");
+        const renderList = (items) => {
+          list.innerHTML = "";
+          if (!items.length) {
+            list.innerHTML = `<div class="empty-state" style="grid-column:1/-1">Пак пуст.</div>`;
+            return;
+          }
+          items.forEach((e) => {
+            const tile = document.createElement("div");
+            tile.style.cssText = "position:relative;aspect-ratio:1;background:var(--bg-2);border-radius:12px;padding:8px;display:flex;align-items:center;justify-content:center";
+            const img = document.createElement("img");
+            img.src = e.url;
+            img.style.cssText = "width:100%;height:100%;object-fit:contain";
+            tile.appendChild(img);
+            const code = document.createElement("div");
+            code.textContent = `:${e.shortcode}:`;
+            code.style.cssText = "position:absolute;bottom:-16px;left:50%;transform:translateX(-50%);font-size:10px;color:var(--text-3);white-space:nowrap";
+            tile.appendChild(code);
+            const del = document.createElement("button");
+            del.textContent = "✕";
+            del.style.cssText = "position:absolute;top:4px;right:4px;width:22px;height:22px;border-radius:50%;background:rgba(255,90,110,0.85);color:#fff;font-size:11px";
+            del.addEventListener("click", async () => {
+              if (!confirm("Удалить?")) return;
+              await supabase.from("custom_emojis").delete().eq("id", e.id);
+              emojis = emojis.filter((x) => x.id !== e.id);
+              renderList(emojis);
+            });
+            tile.appendChild(del);
+            list.appendChild(tile);
+          });
+        };
+        renderList(emojis);
+
+        body.querySelector("#ce-add").addEventListener("click", () => {
+          const inp = document.createElement("input");
+          inp.type = "file";
+          inp.accept = "image/*";
+          inp.addEventListener("change", async () => {
+            const f = inp.files[0];
+            if (!f) return;
+            if (f.size > STICKER_MAX) return toast("Максимум 2 MB", "warning");
+            const shortcode = (prompt(
+              "Короткий код:",
+              f.name.replace(/\.[^.]+$/, "").toLowerCase().replace(/[^a-z0-9_]/g, "")
+            ) || "").trim();
+            if (!shortcode) return;
+            try {
+              const safe = f.name.replace(/[^\w.\-]+/g, "_").slice(0, 60);
+              const path = `${this.app.user.id}/emoji-${pack.id}-${Date.now()}-${safe}`;
+              const { error: upErr } = await supabase.storage
+                .from(STICKER_BUCKET)
+                .upload(path, f, { contentType: f.type, upsert: false });
+              if (upErr) throw upErr;
+              const { data: pub } = supabase.storage.from(STICKER_BUCKET).getPublicUrl(path);
+              const { data: row, error } = await supabase.from("custom_emojis")
+                .insert({ pack_id: pack.id, shortcode, url: pub.publicUrl })
+                .select().single();
+              if (error) throw error;
+              emojis.push(row);
+              renderList(emojis);
+              toast("Эмодзи добавлен", "success");
+            } catch (e) { toast(e.message || "Ошибка", "error"); }
+          });
+          inp.click();
+        });
+      },
+    });
+  }
+
+  openBotFather() {
+    this.app.openModal({
+      title: "Создание бота",
+      body: (body) => {
+        body.innerHTML = `
+          <div class="form-group"><label>Username (латиница, 3–24)</label><input id="bf-username" maxlength="24" placeholder="MyCoolBot"></div>
+          <div class="form-group"><label>Отображаемое имя</label><input id="bf-name" maxlength="40" placeholder="My Cool Bot"></div>
+          <div class="form-group"><label>Описание</label><input id="bf-desc" maxlength="200" placeholder="Что делает бот"></div>
+          <div class="form-group"><label>Команды (по одной на строку)</label><textarea id="bf-commands" rows="5" placeholder="/start Привет!\n/help Помощь"></textarea></div>
+          <div id="bf-error" class="form-error"></div>
+          <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;padding-top:18px;border-top:1px solid var(--border)">
+            <button class="btn btn-ghost" id="bf-cancel">Отмена</button>
+            <button class="btn btn-primary" id="bf-create">Создать бота</button>
+          </div>`;
+        body.querySelector("#bf-cancel").addEventListener("click", () => this.app.closeModal());
+        body.querySelector("#bf-create").addEventListener("click", async () => {
+          const username = body.querySelector("#bf-username").value.trim();
+          const name = body.querySelector("#bf-name").value.trim();
+          const desc = body.querySelector("#bf-desc").value.trim();
+          const commandsRaw = body.querySelector("#bf-commands").value;
+          const errEl = body.querySelector("#bf-error");
+          errEl.classList.remove("show");
+          if (!/^[a-zA-Z0-9_]{3,24}$/.test(username)) {
+            errEl.textContent = "Username: 3–24, латиница/цифры/_";
+            errEl.classList.add("show");
+            return;
+          }
+          const commands = commandsRaw.split("\n")
+            .map((l) => l.trim()).filter(Boolean)
+            .map((line) => {
+              const m = line.match(/^(\S+)\s+(.*)$/);
+              if (m) return { cmd: m[1], reply: m[2] };
+              return { cmd: line, reply: "(нет ответа)" };
+            });
+          try {
+            const { data, error } = await supabase.rpc("create_custom_bot", {
+              p_username: username,
+              p_display_name: name || username,
+              p_description: desc,
+              p_commands: commands,
+            });
+            if (error) throw error;
+            toast("Бот создан", "success");
+            this.app.sounds?.success();
+            this.app.closeModal();
+            setTimeout(() => this.openBotChatById(data), 300);
+          } catch (e) {
+            errEl.textContent = e.message || "Ошибка";
+            errEl.classList.add("show");
+          }
+        });
+      },
+    });
+  }
+
+  async openMyBots() {
+    try {
+      const { data } = await supabase.from("custom_bots")
+        .select("bot_user_id, username, display_name, description, commands, created_at")
+        .eq("owner_id", this.app.user.id)
+        .order("created_at", { ascending: false });
+      this.app.openModal({
+        title: "Мои боты",
+        body: (body) => {
+          if (!data?.length) {
+            body.innerHTML = `<p class="muted">У тебя пока нет ботов</p>`;
+            return;
+          }
+          data.forEach((b) => {
+            const row = document.createElement("div");
+            row.className = "settings-row";
+            row.innerHTML = `<div class="settings-row-info"><div class="settings-row-label">${escapeHtml(b.display_name)} <span class="bot-badge">[BOT]</span></div><div class="settings-row-desc">@${escapeHtml(b.username)} · ${(b.commands || []).length} команд</div></div>`;
+            const open = document.createElement("button");
+            open.className = "btn btn-ghost";
+            open.textContent = "Открыть";
+            open.addEventListener("click", () => {
+              this.app.closeModal();
+              this.openBotChatById(b.bot_user_id);
+            });
+            row.appendChild(open);
+            body.appendChild(row);
+          });
+        },
+      });
+    } catch (e) { toast("Ошибка загрузки", "error"); }
+  }
+
+  async openBotChatById(botUserId) {
+    try {
+      const res = await supabase.rpc("get_or_create_direct_chat", { other_user: botUserId });
+      if (res.error) throw res.error;
+      await this.app.chatService.refreshChats();
+      const chat = this.app.chats.find((c) => c.id === res.data);
+      if (chat) this.app.chatService.openChat(chat);
+    } catch (e) { toast("Не удалось открыть чат с ботом", "error"); }
+  }
+
+  /* ============================================================
+     BOT REPLIES (из chat.js)
+     ============================================================ */
+  maybeBotReply(msg) {
+    if (!this.app.activeChat?.peer?.is_bot) return;
+    if (msg.sender_id !== this.app.user.id) return;
+    const text = (msg.content || "").trim();
+    if (!text.startsWith("/")) return;
+    const [cmd, ...args] = text.split(/\s+/);
+    const key = cmd.toLowerCase();
+
+    if (key === "/newbot") {
+      this.deliverBotReply("Открываю мастер создания бота…");
+      setTimeout(() => this.openBotFather(), 300);
+      return;
+    }
+    if (key === "/mybots") {
+      this.deliverBotReply("Открываю список ботов…");
+      setTimeout(() => this.openMyBots(), 300);
+      return;
+    }
+    const builtin = BOT_COMMANDS[key];
+    if (builtin) {
+      const reply = typeof builtin === "function" ? builtin(args) : builtin;
+      this.deliverBotReply(reply);
+      return;
+    }
+    if (Array.isArray(this.app._activeBotCommands)) {
+      const custom = this.app._activeBotCommands.find(
+        (c) => (c.cmd || "").toLowerCase() === key
+      );
+      if (custom) {
+        this.deliverBotReply(custom.reply || "");
+        return;
+      }
+    }
+  }
+
+  async deliverBotReply(text) {
+    if (!this.app.activeChat) return;
+    try {
+      const { error } = await supabase.rpc("bot_reply", {
+        p_chat_id: this.app.activeChat.id,
+        p_content: text,
+      });
+      if (error) throw error;
+    } catch (e) { console.error("bot_reply:", e); }
+  }
+
+  /* ============================================================
+     FILE PICKER
+     ============================================================ */
+  async pickAttachment() {
+    if (!this.app.activeChat) return;
+    const input = $("file-attach");
+    input.value = "";
+    input.onchange = async () => {
+      const file = input.files[0];
+      if (!file) return;
+      if (file.size > ATTACH_MAX) return toast("Файл больше 50 MB", "warning");
+      try {
+        toast("Загрузка…", "info");
+        const safeName = file.name.replace(/[^\w.\-]+/g, "_").slice(0, 80);
+        const path = `${this.app.user.id}/${this.app.activeChat.id}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}-${safeName}`;
+        const { error: upErr } = await supabase.storage
+          .from(ATTACH_BUCKET)
+          .upload(path, file, { contentType: file.type || "application/octet-stream", upsert: false });
+        if (upErr) throw upErr;
+        const { data: pub } = supabase.storage.from(ATTACH_BUCKET).getPublicUrl(path);
+        let kind = "file";
+        if (file.type.startsWith("image/")) kind = "image";
+        else if (file.type.startsWith("video/")) kind = "video";
+        this.app.pendingAttachment = {
+          url: pub.publicUrl, kind, name: file.name, size: file.size,
+        };
+        $("attach-label").textContent = `📎 ${file.name} (${humanSize(file.size)}) — Enter для отправки`;
+        $("attach-bar").classList.remove("hidden");
+        toast("Готово", "success");
+        this.app.sounds?.click();
+      } catch (e) { toast("Не удалось загрузить", "error"); }
+    };
+    input.click();
+  }
+
+  hideAttachBar() {
+    this.app.pendingAttachment = null;
+    $("attach-bar").classList.add("hidden");
+    $("attach-label").textContent = "";
+  }
+
+  /* ============================================================
+     VOICE RECORDING
+     ============================================================ */
+  async toggleVoiceRecording() {
+    if (this.app._recorder && this.app._recorder.state === "recording") {
+      return this.stopVoiceRecording();
+    }
+    if (!navigator.mediaDevices || !window.MediaRecorder) {
+      return toast("Запись голоса не поддерживается", "error");
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      this.app._recorder = new MediaRecorder(stream);
+      this.app._chunks = [];
+      this.app._recorder.ondataavailable = (e) => {
+        if (e.data.size) this.app._chunks.push(e.data);
+      };
+      this.app._recorder.onstop = () => this._finishVoiceRecording();
+      this.app._recorder.start();
+      this.app._recStartAt = Date.now();
+
+      const bar = $("voice-bar");
+      if (bar) {
+        bar.classList.remove("hidden");
+        bar.querySelector(".voice-time").textContent = "0:00";
+      }
+      this.app._voiceTimer = setInterval(() => {
+        const sec = Math.floor((Date.now() - this.app._recStartAt) / 1000);
+        const mm = Math.floor(sec / 60);
+        const ss = String(sec % 60).padStart(2, "0");
+        const b2 = $("voice-bar");
+        if (b2) b2.querySelector(".voice-time").textContent = `${mm}:${ss}`;
+      }, 250);
+    } catch (e) { toast("Нет доступа к микрофону", "error"); }
+  }
+
+  stopVoiceRecording() {
+    if (!this.app._recorder) return;
+    try { this.app._recorder.stop(); } catch (_) {}
+    if (this.app._voiceTimer) {
+      clearInterval(this.app._voiceTimer);
+      this.app._voiceTimer = null;
+    }
+    const bar = $("voice-bar");
+    if (bar) bar.classList.add("hidden");
+  }
+
+  async _finishVoiceRecording() {
+    const chunks = this.app._chunks || [];
+    this.app._chunks = [];
+    if (!chunks.length) return;
+    const blob = new Blob(chunks, { type: "audio/webm" });
+    const buffer = await blob.arrayBuffer();
+    try {
+      const path = `${this.app.user.id}/${this.app.activeChat.id}/${Date.now()}-voice.webm`;
+      const { error: upErr } = await supabase.storage
+        .from(ATTACH_BUCKET)
+        .upload(path, buffer, { contentType: "audio/webm", upsert: false });
+      if (upErr) throw upErr;
+      const { data: pub } = supabase.storage.from(ATTACH_BUCKET).getPublicUrl(path);
+      const payload = {
+        chat_id: this.app.activeChat.id,
+        sender_id: this.app.user.id,
+        content: "[голосовое]",
+        kind: "voice",
+        attachment_url: pub.publicUrl,
+        attachment_type: "voice",
+        file_name: "voice.webm",
+        file_size: blob.size,
+      };
+      const { data, error } = await supabase.from("messages").insert(payload).select().single();
+      if (error) throw error;
+      if (!this.app.messages.find((m) => m.id === data.id)) {
+        this.app.messages.push(data);
+        this.app.chatService.paintMessageWindow();
+      }
+      this.app.sounds?.send();
+      toast("Голосовое отправлено", "success");
+    } catch (e) { toast("Ошибка голосового: " + (e.message || ""), "error"); }
+  }
+}
